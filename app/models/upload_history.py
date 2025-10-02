@@ -1,0 +1,30 @@
+from datetime import datetime
+from typing import Optional
+
+
+class UploadHistory:
+    def __init__(
+        self,
+        id: Optional[int] = None,
+        business_id: str = "",
+        file_name: str = "",
+        file_size: int = 0,
+        file_extension: str = "",
+        upload_time: Optional[datetime] = None,
+        status: str = "pending",
+        error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+        yonyou_file_id: Optional[str] = None,
+        retry_count: int = 0
+    ):
+        self.id = id
+        self.business_id = business_id
+        self.file_name = file_name
+        self.file_size = file_size
+        self.file_extension = file_extension
+        self.upload_time = upload_time or datetime.now()
+        self.status = status
+        self.error_code = error_code
+        self.error_message = error_message
+        self.yonyou_file_id = yonyou_file_id
+        self.retry_count = retry_count

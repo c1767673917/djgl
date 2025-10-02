@@ -1,0 +1,209 @@
+let
+    // ===========================================
+    // 配置参数区域 - 便于维护和修改
+    // ===========================================
+    AppKey = "a60a1060f99a45d3b4f11510c6d8bd31",
+    AppSecret = "6af2060e77e2016fb4907561682bd29fcd887f6b",
+    StartDate = "2025-06-01",  // 开始日期
+    EndDate = "2025-06-24",    // 结束日期
+    PageSize = 500,
+    
+    // ===========================================
+    // Python脚本模板 - 完全按照原程序方法
+    // ===========================================
+    PythonScriptTemplate = "
+import requests
+import base64
+import hmac
+import hashlib
+import time
+import urllib.parse
+import pandas as pd
+from datetime import datetime
+import logging
+
+def get_access_token(app_key, app_secret):
+    '''获取访问令牌 - 完全按照原程序方法'''
+    timestamp = str(int(time.time() * 1000))
+    # 构建待签名字符串
+    string_to_sign = f'appKey{app_key}timestamp{timestamp}'
+    
+    # 使用HMAC-SHA256算法计算签名
+    hmac_code = hmac.new(app_secret.encode(), string_to_sign.encode(), hashlib.sha256).digest()
+    signature = urllib.parse.quote(base64.b64encode(hmac_code).decode())
+    
+    # 构建请求URL - 完全按照原程序方式
+    url = f'https://c4.yonyoucloud.com/iuap-api-auth/open-auth/selfAppAuth/base/v1/getAccessToken?appKey={app_key}&timestamp={timestamp}&signature={signature}'
+    
+    response = requests.get(url)
+    result = response.json()
+    
+    if result['code'] == '00000':
+        return result['data']['access_token']
+    else:
+        raise Exception(f'获取token失败: {result[""message""]}')
+
+def get_salesout_data(access_token, start_date, end_date):
+    '''获取销售出库列表数据 - 支持日期期间查询'''
+    url = 'https://c4.yonyoucloud.com/iuap-api-gateway/yonbip/scm/salesout/list'
+
+    # 构建查询参数
+    params = {
+        'access_token': access_token
+    }
+
+    # 构建请求体
+    # 设置日期查询条件: 查询日期期间的数据
+    # 方法1: 使用vouchdate参数的区间格式 (推荐)
+    vouchdate_range = f'{start_date}|{end_date} 23:59:59'
+
+    body = {
+        'pageIndex': 1,
+        'pageSize': {{PAGE_SIZE}},  # 设置较大的页面大小以获取更多数据
+        'isSum': False,
+        'vouchdate': vouchdate_range,  # 使用区间格式查询
+        'simpleVOs': []  # 清空扩展查询条件，使用vouchdate参数
+    }
+
+    # 方法2: 使用simpleVOs的between操作符 (备选方案)
+    # 如果方法1不工作，可以取消注释下面的代码并注释掉上面的vouchdate行
+    # body = {
+    #     'pageIndex': 1,
+    #     'pageSize': {{PAGE_SIZE}},
+    #     'isSum': False,
+    #     'simpleVOs': [
+    #         {
+    #             'field': 'vouchdate',
+    #             'op': 'between',
+    #             'value1': f'{start_date} 00:00:00',
+    #             'value2': f'{end_date} 23:59:59'
+    #         }
+    #     ]
+    # }
+    
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    
+    response = requests.post(url, params=params, json=body, headers=headers)
+    result = response.json()
+
+    if result['code'] == '200':
+        return result['data']
+    else:
+        raise Exception(f'获取销售出库列表失败: {result[""message""]}')
+
+def get_all_salesout_data(access_token, start_date, end_date):
+    '''获取所有销售出库数据 - 支持分页获取'''
+    all_records = []
+    page_index = 1
+
+    while True:
+        # 获取当前页数据
+        url = 'https://c4.yonyoucloud.com/iuap-api-gateway/yonbip/scm/salesout/list'
+        params = {'access_token': access_token}
+
+        vouchdate_range = f'{start_date}|{end_date} 23:59:59'
+        body = {
+            'pageIndex': page_index,
+            'pageSize': {{PAGE_SIZE}},
+            'isSum': False,
+            'vouchdate': vouchdate_range
+        }
+
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(url, params=params, json=body, headers=headers)
+        result = response.json()
+
+        if result['code'] != '200':
+            raise Exception(f'获取销售出库列表失败: {result[""message""]}')
+
+        data = result['data']
+        records = data.get('recordList', [])
+
+        if not records:
+            break
+
+        all_records.extend(records)
+
+        # 检查是否还有更多页
+        if page_index >= data.get('pageCount', 1):
+            break
+
+        page_index += 1
+
+    return {'recordList': all_records, 'recordCount': len(all_records)}
+
+def process_data_for_power_bi(salesout_data):
+    '''处理数据为Power BI可用的格式 - 完全按照原程序方法'''
+    if not salesout_data.get('recordList'):
+        return pd.DataFrame()
+
+    # 提取主要数据
+    df = pd.json_normalize(salesout_data['recordList'])
+
+    # 添加数据处理时间戳，便于追踪
+    df['data_processed_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    return df
+
+# 主函数 - 当在Power BI中使用时，Power BI会使用返回的数据框
+def main():
+    # 设置AppKey和AppSecret
+    app_key = '{{APP_KEY}}'
+    app_secret = '{{APP_SECRET}}'
+
+    # 设置查询日期期间
+    start_date = '{{START_DATE}}'
+    end_date = '{{END_DATE}}'
+
+    try:
+        # 获取访问令牌
+        access_token = get_access_token(app_key, app_secret)
+
+        # 获取销售出库数据（支持分页获取所有数据）
+        salesout_data = get_all_salesout_data(access_token, start_date, end_date)
+
+        # 处理数据为Power BI可用的格式
+        df = process_data_for_power_bi(salesout_data)
+
+        # 打印数据统计信息
+        print(f'成功获取 {start_date} 到 {end_date} 期间的销售出库数据')
+        print(f'共获取到 {len(df)} 条记录')
+
+        # 返回数据框 - Power BI会使用这个返回值
+        return df
+
+    except Exception as e:
+        print(f'错误: {str(e)}')
+        # 返回空数据框
+        return pd.DataFrame()
+
+# 当直接运行脚本时执行
+if __name__ == '__main__':
+    result_df = main()
+    print(f'获取到 {len(result_df)} 条记录')
+    if not result_df.empty:
+        print(result_df.head())
+",
+
+    // ===========================================
+    // 使用Text.Replace替换参数占位符
+    // ===========================================
+    PythonScript = Text.Replace(
+        Text.Replace(
+            Text.Replace(
+                Text.Replace(
+                    Text.Replace(PythonScriptTemplate, "{{APP_KEY}}", AppKey),
+                    "{{APP_SECRET}}", AppSecret),
+                "{{START_DATE}}", StartDate),
+            "{{END_DATE}}", EndDate),
+        "{{PAGE_SIZE}}", Number.ToText(PageSize)),
+
+    // ===========================================
+    // 执行Python脚本并获取结果
+    // ===========================================
+    执行结果 = Python.Execute(PythonScript),
+    最终数据 = 执行结果{[Name="result_df"]}[Value]
+in
+    最终数据
