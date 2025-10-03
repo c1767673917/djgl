@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上传记录管理 - 单据上传系统</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- 头部 -->
+        <header class="admin-header">
+            <h1>上传记录管理</h1>
+            <div class="header-actions">
+                <button class="btn-refresh" id="btnRefresh">刷新</button>
+                <button class="btn-export" id="btnExport">导出CSV</button>
+            </div>
+        </header>
+
+        <!-- 统计卡片 -->
+        <div class="stats-section" id="statsSection">
+            <div class="stat-card">
+                <div class="stat-label">总上传数</div>
+                <div class="stat-value" id="statTotal">0</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">成功</div>
+                <div class="stat-value" id="statSuccess">0</div>
+            </div>
+            <div class="stat-card error">
+                <div class="stat-label">失败</div>
+                <div class="stat-value" id="statFailed">0</div>
+            </div>
+        </div>
+
+        <!-- 筛选栏 -->
+        <div class="filter-section">
+            <div class="filter-row">
+                <input
+                    type="text"
+                    id="searchInput"
+                    class="search-input"
+                    placeholder="搜索单据编号或文件名"
+                >
+
+                <select id="docTypeFilter" class="filter-select">
+                    <option value="">全部类型</option>
+                    <option value="销售">销售</option>
+                    <option value="转库">转库</option>
+                    <option value="其他">其他</option>
+                </select>
+
+                <input
+                    type="date"
+                    id="startDateInput"
+                    class="date-input"
+                    placeholder="开始日期"
+                >
+
+                <input
+                    type="date"
+                    id="endDateInput"
+                    class="date-input"
+                    placeholder="结束日期"
+                >
+
+                <button class="btn-search" id="btnSearch">搜索</button>
+                <button class="btn-reset" id="btnReset">重置</button>
+            </div>
+        </div>
+
+        <!-- 数据表格 -->
+        <div class="table-section">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>单据编号</th>
+                        <th>单据类型</th>
+                        <th>业务ID</th>
+                        <th>上传时间</th>
+                        <th>文件名</th>
+                        <th>大小</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- 数据行动态插入 -->
+                </tbody>
+            </table>
+
+            <!-- 空状态 -->
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <p>暂无记录</p>
+            </div>
+
+            <!-- 加载状态 -->
+            <div class="loading-state" id="loadingState" style="display: none;">
+                <div class="spinner"></div>
+                <p>加载中...</p>
+            </div>
+        </div>
+
+        <!-- 分页 -->
+        <div class="pagination-section">
+            <div class="pagination-info">
+                共 <span id="totalRecords">0</span> 条记录，
+                第 <span id="currentPage">1</span> / <span id="totalPages">1</span> 页
+            </div>
+            <div class="pagination-controls">
+                <button class="btn-page" id="btnFirstPage">首页</button>
+                <button class="btn-page" id="btnPrevPage">上一页</button>
+                <button class="btn-page" id="btnNextPage">下一页</button>
+                <button class="btn-page" id="btnLastPage">末页</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>

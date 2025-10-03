@@ -1,0 +1,275 @@
+from fastapi import APIRouter, Query, HTTPException
+from fastapi.responses import StreamingResponse, FileResponse
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+import csv
+import io
+import os
+import zipfile
+import tempfile
+from pathlib import Path
+from openpyxl import Workbook
+from app.core.database import get_db_connection
+from app.core.config import get_settings
+
+settings = get_settings()
+router = APIRouter()
+
+
+@router.get("/records")
+async def get_admin_records(
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=100, description="每页记录数"),
+    search: Optional[str] = Query(None, description="搜索关键词（单据编号/类型）"),
+    doc_type: Optional[str] = Query(None, description="单据类型筛选"),
+    start_date: Optional[str] = Query(None, description="开始日期（YYYY-MM-DD）"),
+    end_date: Optional[str] = Query(None, description="结束日期（YYYY-MM-DD）")
+) -> Dict[str, Any]:
+    """
+    获取上传记录列表（管理页面）
+
+    查询参数:
+    - page: 页码（从1开始）
+    - page_size: 每页记录数（默认20，最大100）
+    - search: 搜索关键词（模糊匹配单据编号或文件名）
+    - doc_type: 单据类型筛选（销售/转库/其他）
+    - start_date: 开始日期（格式：YYYY-MM-DD）
+    - end_date: 结束日期（格式：YYYY-MM-DD）
+
+    响应格式:
+    {
+        "total": 150,
+        "page": 1,
+        "page_size": 20,
+        "total_pages": 8,
+        "records": [...]
+    }
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 构建WHERE条件（只显示成功的记录）
+    where_clauses = ["status = 'success'"]
+    params = []
+
+    if search:
+        where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
+        search_pattern = f"%{search}%"
+        params.extend([search_pattern, search_pattern])
+
+    if doc_type:
+        where_clauses.append("doc_type = ?")
+        params.append(doc_type)
+
+    if start_date:
+        where_clauses.append("DATE(upload_time) >= ?")
+        params.append(start_date)
+
+    if end_date:
+        where_clauses.append("DATE(upload_time) <= ?")
+        params.append(end_date)
+
+    where_sql = " AND ".join(where_clauses)
+
+    # 查询总记录数
+    cursor.execute(f"SELECT COUNT(*) FROM upload_history WHERE {where_sql}", params)
+    total = cursor.fetchone()[0]
+
+    # 计算分页
+    total_pages = (total + page_size - 1) // page_size
+    offset = (page - 1) * page_size
+
+    # 查询分页数据
+    cursor.execute(f"""
+        SELECT id, business_id, doc_number, doc_type, file_name, file_size,
+               upload_time, status, error_message
+        FROM upload_history
+        WHERE {where_sql}
+        ORDER BY upload_time DESC
+        LIMIT ? OFFSET ?
+    """, params + [page_size, offset])
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # 转换为字典列表
+    records = []
+    for row in rows:
+        records.append({
+            "id": row[0],
+            "business_id": row[1],
+            "doc_number": row[2],
+            "doc_type": row[3],
+            "file_name": row[4],
+            "file_size": row[5],
+            "upload_time": row[6],
+            "status": row[7],
+            "error_message": row[8]
+        })
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "records": records
+    }
+
+
+@router.get("/export")
+async def export_records(
+    search: Optional[str] = Query(None, description="搜索关键词"),
+    doc_type: Optional[str] = Query(None, description="单据类型筛选"),
+    start_date: Optional[str] = Query(None, description="开始日期"),
+    end_date: Optional[str] = Query(None, description="结束日期")
+):
+    """
+    导出上传记录为ZIP包（包含Excel表格和所有图片文件）
+
+    查询参数: 与/records接口相同（不包含分页参数）
+
+    响应: ZIP文件流
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 构建WHERE条件（只导出成功的记录）
+    where_clauses = ["status = 'success'"]
+    params = []
+
+    if search:
+        where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
+        search_pattern = f"%{search}%"
+        params.extend([search_pattern, search_pattern])
+
+    if doc_type:
+        where_clauses.append("doc_type = ?")
+        params.append(doc_type)
+
+    if start_date:
+        where_clauses.append("DATE(upload_time) >= ?")
+        params.append(start_date)
+
+    if end_date:
+        where_clauses.append("DATE(upload_time) <= ?")
+        params.append(end_date)
+
+    where_sql = " AND ".join(where_clauses)
+
+    # 查询所有匹配记录（包括local_file_path）
+    cursor.execute(f"""
+        SELECT doc_number, doc_type, business_id, upload_time, file_name,
+               file_size, local_file_path
+        FROM upload_history
+        WHERE {where_sql}
+        ORDER BY upload_time DESC
+    """, params)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # 创建临时目录和ZIP文件
+    temp_dir = tempfile.mkdtemp()
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    zip_filename = f"upload_records_{timestamp}.zip"
+    zip_path = os.path.join(temp_dir, zip_filename)
+
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # 生成Excel文件
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "上传记录"
+
+            # 写入表头
+            headers = ["单据编号", "单据类型", "业务ID", "上传时间", "文件名", "文件大小(字节)"]
+            ws.append(headers)
+
+            # 写入数据并收集图片文件
+            for row in rows:
+                doc_number, doc_type, business_id, upload_time, file_name, file_size, local_file_path = row
+                ws.append([doc_number, doc_type, business_id, upload_time, file_name, file_size])
+
+                # 添加本地图片文件到ZIP（如果存在）
+                if local_file_path and os.path.exists(local_file_path):
+                    # 在ZIP中使用相对路径：images/文件名
+                    arcname = os.path.join("images", os.path.basename(local_file_path))
+                    zipf.write(local_file_path, arcname=arcname)
+
+            # 保存Excel到临时文件
+            excel_temp_path = os.path.join(temp_dir, f"upload_records_{timestamp}.xlsx")
+            wb.save(excel_temp_path)
+
+            # 添加Excel文件到ZIP
+            zipf.write(excel_temp_path, arcname=f"upload_records_{timestamp}.xlsx")
+
+        # 返回ZIP文件
+        return FileResponse(
+            path=zip_path,
+            media_type="application/zip",
+            filename=zip_filename,
+            background=None  # 文件下载后不自动删除，需要手动清理
+        )
+
+    except Exception as e:
+        # 清理临时文件
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        if os.path.exists(temp_dir):
+            os.rmdir(temp_dir)
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+@router.get("/statistics")
+async def get_statistics() -> Dict[str, Any]:
+    """
+    获取统计数据
+
+    响应格式:
+    {
+        "total_uploads": 1500,
+        "success_count": 1450,
+        "failed_count": 50,
+        "by_doc_type": {
+            "销售": 800,
+            "转库": 600,
+            "其他": 100
+        }
+    }
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 总上传数和成功/失败数
+    cursor.execute("""
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+        FROM upload_history
+    """)
+    row = cursor.fetchone()
+    total_uploads = row[0]
+    success_count = row[1]
+    failed_count = row[2]
+
+    # 按单据类型统计
+    cursor.execute("""
+        SELECT doc_type, COUNT(*) as count
+        FROM upload_history
+        WHERE doc_type IS NOT NULL
+        GROUP BY doc_type
+    """)
+
+    by_doc_type = {}
+    for row in cursor.fetchall():
+        by_doc_type[row[0]] = row[1]
+
+    conn.close()
+
+    return {
+        "total_uploads": total_uploads,
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "by_doc_type": by_doc_type
+    }

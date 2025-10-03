@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # 数据库配置
     DATABASE_URL: str = "sqlite:///data/uploads.db"
 
+    # 本地文件存储配置
+    LOCAL_STORAGE_PATH: str = "data/uploaded_files"  # 本地文件存储路径
+
     # Token缓存配置
     TOKEN_CACHE_DURATION: int = 3600  # 1小时
 

@@ -577,3 +577,37 @@ body {
         width: 100%;
     }
 }
+
+/* 单据类型主题色 */
+.header.theme-sales {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.header.theme-sales h1,
+.header.theme-sales .business-id,
+.header.theme-sales .business-id span {
+    color: white;
+}
+
+.header.theme-transfer {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.header.theme-transfer h1,
+.header.theme-transfer .business-id,
+.header.theme-transfer .business-id span {
+    color: white;
+}
+
+.header.theme-other {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+}
+
+.header.theme-other h1,
+.header.theme-other .business-id,
+.header.theme-other .business-id span {
+    color: white;
+}

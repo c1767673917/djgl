@@ -7,6 +7,8 @@ class UploadHistory:
         self,
         id: Optional[int] = None,
         business_id: str = "",
+        doc_number: Optional[str] = None,
+        doc_type: Optional[str] = None,
         file_name: str = "",
         file_size: int = 0,
         file_extension: str = "",
@@ -15,10 +17,13 @@ class UploadHistory:
         error_code: Optional[str] = None,
         error_message: Optional[str] = None,
         yonyou_file_id: Optional[str] = None,
-        retry_count: int = 0
+        retry_count: int = 0,
+        local_file_path: Optional[str] = None
     ):
         self.id = id
         self.business_id = business_id
+        self.doc_number = doc_number
+        self.doc_type = doc_type
         self.file_name = file_name
         self.file_size = file_size
         self.file_extension = file_extension
@@ -28,3 +33,4 @@ class UploadHistory:
         self.error_message = error_message
         self.yonyou_file_id = yonyou_file_id
         self.retry_count = retry_count
+        self.local_file_path = local_file_path

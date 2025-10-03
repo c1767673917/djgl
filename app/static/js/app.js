@@ -1,6 +1,8 @@
 // 全局状态
 const state = {
     businessId: '',
+    docNumber: '',
+    docType: '',
     selectedFiles: [],
     maxFiles: 10,
     maxFileSize: 10 * 1024 * 1024, // 10MB
@@ -32,17 +34,33 @@ const elements = {
 
 // 初始化
 function init() {
-    // 从URL提取businessId
-    const path = window.location.pathname;
-    state.businessId = path.substring(1);
+    // 从URL查询参数提取参数
+    const urlParams = new URLSearchParams(window.location.search);
+    state.businessId = urlParams.get('business_id');
+    state.docNumber = urlParams.get('doc_number');
+    state.docType = urlParams.get('doc_type');
 
-    // 验证businessId
+    // 验证必填参数
     if (!state.businessId || !/^\d+$/.test(state.businessId)) {
-        showToast('错误的业务单据号，请扫描正确的二维码', 'error');
+        showToast('错误的业务单据ID，请扫描正确的二维码', 'error');
         return;
     }
 
-    elements.businessIdDisplay.textContent = state.businessId;
+    if (!state.docNumber || state.docNumber.trim().length === 0) {
+        showToast('缺少单据编号参数', 'error');
+        return;
+    }
+
+    if (!state.docType || !['销售', '转库', '其他'].includes(state.docType)) {
+        showToast('单据类型参数错误', 'error');
+        return;
+    }
+
+    // 显示参数信息
+    elements.businessIdDisplay.textContent = `${state.docType} - ${state.docNumber}`;
+
+    // 根据单据类型设置主题色
+    setThemeByDocType(state.docType);
 
     // 绑定事件
     elements.uploadArea.addEventListener('click', () => elements.fileInput.click());
@@ -51,6 +69,23 @@ function init() {
     elements.btnUpload.addEventListener('click', uploadFiles);
     elements.btnHistory.addEventListener('click', showHistory);
     elements.btnCloseModal.addEventListener('click', () => elements.historyModal.style.display = 'none');
+}
+
+// 根据单据类型设置主题
+function setThemeByDocType(docType) {
+    const header = document.querySelector('.header');
+
+    // 移除现有主题类
+    header.classList.remove('theme-sales', 'theme-transfer', 'theme-other');
+
+    // 根据类型添加主题类
+    if (docType === '销售') {
+        header.classList.add('theme-sales');
+    } else if (docType === '转库') {
+        header.classList.add('theme-transfer');
+    } else {
+        header.classList.add('theme-other');
+    }
 }
 
 // 文件选择处理
@@ -224,6 +259,8 @@ async function uploadFiles() {
     // 准备FormData
     const formData = new FormData();
     formData.append('business_id', state.businessId);
+    formData.append('doc_number', state.docNumber);
+    formData.append('doc_type', state.docType);
     state.selectedFiles.forEach(file => {
         formData.append('files', file);
     });
@@ -419,10 +456,11 @@ async function validateQRCode(file) {
 
                     // 提取二维码内容
                     const detectedUrl = code.data;
-                    const detectedBusinessId = extractBusinessId(detectedUrl);
+                    const detectedParams = extractBusinessId(detectedUrl);
                     const currentBusinessId = state.businessId;
+                    const currentDocNumber = state.docNumber;
 
-                    if (!detectedBusinessId) {
+                    if (!detectedParams) {
                         // 二维码内容不是有效URL
                         resolve({
                             qrCodeDetected: true,
@@ -434,7 +472,8 @@ async function validateQRCode(file) {
                         return;
                     }
 
-                    if (detectedBusinessId === currentBusinessId) {
+                    // 只验证business_id，不验证doc_number
+                    if (detectedParams.businessId === currentBusinessId) {
                         // 验证通过
                         resolve({
                             qrCodeDetected: true,
@@ -448,10 +487,10 @@ async function validateQRCode(file) {
                             qrCodeDetected: true,
                             urlMatched: false,
                             detectedUrl: detectedUrl,
-                            detectedBusinessId: detectedBusinessId,
+                            detectedBusinessId: detectedParams.businessId,
                             currentBusinessId: currentBusinessId,
                             needsUserConfirmation: true,
-                            message: '二维码与当前单据不一致'
+                            message: '二维码业务单据ID不一致'
                         });
                     }
 
@@ -472,12 +511,29 @@ async function validateQRCode(file) {
 /**
  * 从URL中提取business_id
  * @param {string} url - 完整URL
- * @returns {string|null} business_id或null
+ * @returns {Object|null} {businessId, docNumber, docType}或null
  */
 function extractBusinessId(url) {
-    // 匹配格式: http://xxx:port/数字
-    const match = url.match(/\/(\d+)$/);
-    return match ? match[1] : null;
+    // 新格式: http://xxx:port/?business_id=数字&doc_number=xx&doc_type=xx
+    try {
+        const urlObj = new URL(url);
+        const businessId = urlObj.searchParams.get('business_id');
+        const docNumber = urlObj.searchParams.get('doc_number');
+        const docType = urlObj.searchParams.get('doc_type');
+
+        // 验证business_id格式
+        if (businessId && /^\d+$/.test(businessId)) {
+            return {
+                businessId: businessId,
+                docNumber: docNumber,
+                docType: docType
+            };
+        }
+        return null;
+    } catch (e) {
+        // URL解析失败
+        return null;
+    }
 }
 
 /**
@@ -537,19 +593,19 @@ function showValidationDialog(result) {
                 <p class="hint">建议重新拍照确保二维码清晰可见</p>
             `;
         } else if (!result.urlMatched) {
-            const currentUrl = `${window.location.origin}/${result.currentBusinessId || state.businessId}`;
+            const currentUrl = `${window.location.origin}/?business_id=${result.currentBusinessId || state.businessId}&doc_number=${result.currentDocNumber || state.docNumber}&doc_type=${state.docType}`;
             message = `
                 <div class="dialog-icon warning">⚠️</div>
                 <h3>二维码不匹配</h3>
                 <p>检测到的二维码与当前单据不一致</p>
                 <div class="url-compare">
                     <div class="url-item">
-                        <span class="label">图片二维码:</span>
-                        <span class="url">${result.detectedUrl}</span>
+                        <span class="label">图片单据:</span>
+                        <span class="url">${result.detectedDocNumber || '未知'}</span>
                     </div>
                     <div class="url-item">
                         <span class="label">当前单据:</span>
-                        <span class="url">${currentUrl}</span>
+                        <span class="url">${result.currentDocNumber || state.docNumber}</span>
                     </div>
                 </div>
             `;
