@@ -34,8 +34,8 @@ async def upload_files(
     }
     """
     # 验证businessId格式
-    if not business_id or len(business_id) != 6 or not business_id.isdigit():
-        raise HTTPException(status_code=400, detail="businessId必须为6位数字")
+    if not business_id or not business_id.isdigit():
+        raise HTTPException(status_code=400, detail="businessId必须为纯数字")
 
     # 验证文件数量
     if len(files) > settings.MAX_FILES_PER_REQUEST:

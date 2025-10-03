@@ -35,7 +35,7 @@ function init() {
     state.businessId = path.substring(1);
 
     // 验证businessId
-    if (!state.businessId || state.businessId.length !== 6 || !/^\d+$/.test(state.businessId)) {
+    if (!state.businessId || !/^\d+$/.test(state.businessId)) {
         showToast('错误的业务单据号，请扫描正确的二维码', 'error');
         return;
     }
