@@ -85,8 +85,11 @@ class YonYouClient:
             # 获取access_token
             access_token = await self.get_access_token()
 
+            # URL编码token(token中包含特殊字符如/, +, =等需要编码)
+            encoded_token = urllib.parse.quote(access_token, safe='')
+
             # 构建请求URL
-            url = f"{self.upload_url}?access_token={access_token}&businessType={self.business_type}&businessId={business_id}"
+            url = f"{self.upload_url}?access_token={encoded_token}&businessType={self.business_type}&businessId={business_id}"
 
             # 构建multipart/form-data请求
             files = {
@@ -105,14 +108,16 @@ class YonYouClient:
                     "data": result["data"]["data"][0]
                 }
             else:
-                # 特殊处理: Token过期时自动刷新重试
-                if result.get("code") == "1090003500065" and retry_count == 0:
+                # 特殊处理: Token无效或过期时自动刷新重试
+                # 错误码: 1090003500065 (token过期), 310036 (非法token)
+                error_code = str(result.get("code"))
+                if error_code in ["1090003500065", "310036"] and retry_count == 0:
                     access_token = await self.get_access_token(force_refresh=True)
                     return await self.upload_file(file_content, file_name, business_id, retry_count + 1)
 
                 return {
                     "success": False,
-                    "error_code": str(result.get("code")),
+                    "error_code": error_code,
                     "error_message": result.get("message", "未知错误")
                 }
 

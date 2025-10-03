@@ -306,6 +306,44 @@ class TestFileUpload:
             assert result["error_code"] == "1090003500065"
 
     @pytest.mark.asyncio
+    async def test_upload_file_invalid_token_retry(
+        self,
+        test_image_bytes,
+        mock_token_response_success,
+        mock_upload_response_invalid_token,
+        mock_upload_response_success
+    ):
+        """测试非法token(错误码310036)时的重试机制"""
+        client = YonYouClient()
+
+        with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get, \
+             patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+
+            # Mock Token获取
+            mock_get_response = Mock()
+            mock_get_response.json.return_value = mock_token_response_success
+            mock_get.return_value = mock_get_response
+
+            # 第一次上传返回非法token，第二次成功
+            mock_post.side_effect = [
+                Mock(json=Mock(return_value=mock_upload_response_invalid_token)),
+                Mock(json=Mock(return_value=mock_upload_response_success))
+            ]
+
+            result = await client.upload_file(
+                file_content=test_image_bytes,
+                file_name="test.jpg",
+                business_id="123456"
+            )
+
+            # 验证重试成功
+            assert result["success"] is True
+            # 验证调用了两次上传API
+            assert mock_post.call_count == 2
+            # 验证调用了两次Token获取(第二次是force_refresh)
+            assert mock_get.call_count == 2
+
+    @pytest.mark.asyncio
     async def test_upload_file_retry_limit(
         self,
         test_image_bytes,
@@ -431,6 +469,52 @@ class TestFileUpload:
             assert "access_token=test_access_token_12345" in url
             assert f"businessType={client.business_type}" in url
             assert "businessId=123456" in url
+
+    @pytest.mark.asyncio
+    async def test_upload_file_token_url_encoding(
+        self,
+        test_image_bytes,
+        mock_upload_response_success
+    ):
+        """测试Token中的特殊字符被正确URL编码"""
+        client = YonYouClient()
+
+        # 创建一个包含特殊字符的token(模拟真实场景)
+        token_with_special_chars = "YT5_TG/test+token=base64"
+
+        with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get, \
+             patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+
+            # Mock Token获取返回带特殊字符的token
+            mock_get_response = Mock()
+            mock_get_response.json.return_value = {
+                "code": "00000",
+                "message": "成功",
+                "data": {
+                    "access_token": token_with_special_chars,
+                    "expires_in": 3600
+                }
+            }
+            mock_get.return_value = mock_get_response
+
+            mock_post_response = Mock()
+            mock_post_response.json.return_value = mock_upload_response_success
+            mock_post.return_value = mock_post_response
+
+            await client.upload_file(
+                file_content=test_image_bytes,
+                file_name="test.jpg",
+                business_id="123456"
+            )
+
+            # 验证URL中token被正确编码
+            call_args = mock_post.call_args
+            url = call_args[0][0]
+
+            # 特殊字符应该被编码: / -> %2F, + -> %2B, = -> %3D
+            assert "access_token=YT5_TG%2Ftest%2Btoken%3Dbase64" in url
+            # 不应该包含未编码的特殊字符
+            assert "YT5_TG/test+token=base64" not in url.split("access_token=")[1].split("&")[0]
 
     @pytest.mark.asyncio
     async def test_upload_file_multipart_format(
