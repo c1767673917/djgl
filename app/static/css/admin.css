@@ -327,6 +327,61 @@ body {
     background: #f39c12;
 }
 
+/* 删除按钮样式 */
+.btn-delete {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.btn-delete:hover {
+    background-color: #c0392b;
+}
+
+.btn-delete:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+/* 单行删除按钮 */
+.btn-delete-row {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.btn-delete-row:hover {
+    background-color: #c0392b;
+}
+
+/* 复选框样式 */
+.row-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+#selectAll {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+/* 操作列居中 */
+.data-table td:last-child {
+    text-align: center;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
     .filter-row {

@@ -9,7 +9,8 @@ const state = {
         docType: '',
         startDate: '',
         endDate: ''
-    }
+    },
+    selectedIds: new Set()  // 跟踪选中的记录ID
 };
 
 // DOM元素
@@ -45,6 +46,10 @@ const elements = {
     btnRefresh: document.getElementById('btnRefresh'),
     btnExport: document.getElementById('btnExport'),
 
+    // 删除相关
+    btnBatchDelete: document.getElementById('btnBatchDelete'),
+    selectAll: document.getElementById('selectAll'),
+
     // Toast
     toast: document.getElementById('toast')
 };
@@ -66,6 +71,10 @@ function init() {
     elements.searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') handleSearch();
     });
+
+    // 删除相关事件
+    elements.btnBatchDelete.addEventListener('click', handleBatchDelete);
+    elements.selectAll.addEventListener('change', handleSelectAll);
 
     // 加载数据
     loadStatistics();
@@ -137,6 +146,14 @@ async function loadRecords() {
 function renderTable(records) {
     elements.tableBody.innerHTML = records.map(record => `
         <tr>
+            <td>
+                <input
+                    type="checkbox"
+                    class="row-checkbox"
+                    data-id="${record.id}"
+                    ${state.selectedIds.has(record.id) ? 'checked' : ''}
+                >
+            </td>
             <td>${record.doc_number || '-'}</td>
             <td>${record.doc_type || '-'}</td>
             <td>${record.business_id}</td>
@@ -149,8 +166,27 @@ function renderTable(records) {
                 </span>
                 ${record.error_message ? `<br><small style="color: #e74c3c;">${record.error_message}</small>` : ''}
             </td>
+            <td>
+                <button class="btn-delete-row" data-id="${record.id}">删除</button>
+            </td>
         </tr>
     `).join('');
+
+    // 绑定复选框事件
+    document.querySelectorAll('.row-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', handleCheckboxChange);
+    });
+
+    // 绑定删除按钮事件
+    document.querySelectorAll('.btn-delete-row').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const recordId = parseInt(e.target.dataset.id);
+            handleDeleteRow(recordId);
+        });
+    });
+
+    // 更新批量删除按钮状态
+    updateBatchDeleteButton();
 }
 
 // 更新分页信息
@@ -253,6 +289,138 @@ function showToast(message, type = 'success') {
     setTimeout(() => {
         elements.toast.style.display = 'none';
     }, 3000);
+}
+
+// 处理全选/取消全选
+function handleSelectAll() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    const isChecked = elements.selectAll.checked;
+
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = isChecked;
+        const recordId = parseInt(checkbox.dataset.id);
+
+        if (isChecked) {
+            state.selectedIds.add(recordId);
+        } else {
+            state.selectedIds.delete(recordId);
+        }
+    });
+
+    updateBatchDeleteButton();
+}
+
+// 处理单行复选框变化
+function handleCheckboxChange(event) {
+    const recordId = parseInt(event.target.dataset.id);
+
+    if (event.target.checked) {
+        state.selectedIds.add(recordId);
+    } else {
+        state.selectedIds.delete(recordId);
+    }
+
+    // 更新全选框状态
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
+    elements.selectAll.checked = checkedCount === checkboxes.length;
+    elements.selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+
+    updateBatchDeleteButton();
+}
+
+// 更新批量删除按钮显示状态
+function updateBatchDeleteButton() {
+    if (state.selectedIds.size > 0) {
+        elements.btnBatchDelete.style.display = 'inline-block';
+        elements.btnBatchDelete.textContent = `批量删除 (${state.selectedIds.size})`;
+    } else {
+        elements.btnBatchDelete.style.display = 'none';
+    }
+}
+
+// 处理批量删除
+async function handleBatchDelete() {
+    if (state.selectedIds.size === 0) {
+        showToast('请至少选择一条记录', 'error');
+        return;
+    }
+
+    const confirmMessage = `确定要删除选中的 ${state.selectedIds.size} 条记录吗？\n\n注意：这将标记记录为已删除，但不会删除本地文件。`;
+
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/records', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                ids: Array.from(state.selectedIds)
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || '删除失败');
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+
+        // 清空选中状态
+        state.selectedIds.clear();
+        elements.selectAll.checked = false;
+        updateBatchDeleteButton();
+
+        // 刷新列表和统计
+        await Promise.all([loadRecords(), loadStatistics()]);
+
+    } catch (error) {
+        showToast('删除失败: ' + error.message, 'error');
+    }
+}
+
+// 处理单行删除
+async function handleDeleteRow(recordId) {
+    const confirmMessage = '确定要删除这条记录吗？\n\n注意：这将标记记录为已删除，但不会删除本地文件。';
+
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/records', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                ids: [recordId]
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || '删除失败');
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+
+        // 从选中集合中移除（如果存在）
+        state.selectedIds.delete(recordId);
+        updateBatchDeleteButton();
+
+        // 刷新列表和统计
+        await Promise.all([loadRecords(), loadStatistics()]);
+
+    } catch (error) {
+        showToast('删除失败: ' + error.message, 'error');
+    }
 }
 
 // 启动应用

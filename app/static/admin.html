@@ -14,6 +14,7 @@
             <div class="header-actions">
                 <button class="btn-refresh" id="btnRefresh">刷新</button>
                 <button class="btn-export" id="btnExport">导出CSV</button>
+                <button class="btn-delete" id="btnBatchDelete" style="display: none;">批量删除</button>
             </div>
         </header>
 
@@ -74,6 +75,9 @@
             <table class="data-table">
                 <thead>
                     <tr>
+                        <th width="40">
+                            <input type="checkbox" id="selectAll" title="全选">
+                        </th>
                         <th>单据编号</th>
                         <th>单据类型</th>
                         <th>业务ID</th>
@@ -81,6 +85,7 @@
                         <th>文件名</th>
                         <th>大小</th>
                         <th>状态</th>
+                        <th width="80">操作</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">

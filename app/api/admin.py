@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pydantic import BaseModel
 import csv
 import io
 import os
@@ -48,8 +49,8 @@ async def get_admin_records(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 构建WHERE条件（只显示成功的记录）
-    where_clauses = ["status = 'success'"]
+    # 构建WHERE条件（只显示成功的记录，且未删除）
+    where_clauses = ["status = 'success'", "deleted_at IS NULL"]
     params = []
 
     if search:
@@ -133,8 +134,8 @@ async def export_records(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 构建WHERE条件（只导出成功的记录）
-    where_clauses = ["status = 'success'"]
+    # 构建WHERE条件（只导出成功的记录，且未删除）
+    where_clauses = ["status = 'success'", "deleted_at IS NULL"]
     params = []
 
     if search:
@@ -240,24 +241,25 @@ async def get_statistics() -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 总上传数和成功/失败数
+    # 总上传数和成功/失败数（只统计未删除的记录）
     cursor.execute("""
         SELECT
             COUNT(*) as total,
             SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
             SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
         FROM upload_history
+        WHERE deleted_at IS NULL
     """)
     row = cursor.fetchone()
     total_uploads = row[0]
     success_count = row[1]
     failed_count = row[2]
 
-    # 按单据类型统计
+    # 按单据类型统计（只统计未删除的记录）
     cursor.execute("""
         SELECT doc_type, COUNT(*) as count
         FROM upload_history
-        WHERE doc_type IS NOT NULL
+        WHERE doc_type IS NOT NULL AND deleted_at IS NULL
         GROUP BY doc_type
     """)
 
@@ -273,3 +275,71 @@ async def get_statistics() -> Dict[str, Any]:
         "failed_count": failed_count,
         "by_doc_type": by_doc_type
     }
+
+
+class DeleteRecordsRequest(BaseModel):
+    """删除记录请求模型"""
+    ids: List[int]
+
+
+@router.delete("/records")
+async def delete_records(request: DeleteRecordsRequest) -> Dict[str, Any]:
+    """
+    软删除上传记录（批量）
+
+    请求体:
+    {
+        "ids": [1, 2, 3]  // 要删除的记录ID列表
+    }
+
+    响应格式:
+    {
+        "success": true,
+        "deleted_count": 3,
+        "message": "成功删除3条记录"
+    }
+
+    说明:
+    - 采用软删除策略，只标记deleted_at字段，不物理删除数据
+    - 不删除本地文件系统的文件
+    - 幂等性设计：重复删除已删除的记录不报错
+    - 不调用用友云API
+    """
+    if not request.ids:
+        raise HTTPException(status_code=400, detail="请至少选择一条记录")
+
+    # 验证所有ID为正整数
+    if any(id <= 0 for id in request.ids):
+        raise HTTPException(status_code=400, detail="无效的记录ID")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 构建IN子句的占位符
+        placeholders = ','.join('?' * len(request.ids))
+
+        # 软删除：设置deleted_at字段为当前时间
+        current_time = datetime.now().isoformat()
+        cursor.execute(f"""
+            UPDATE upload_history
+            SET deleted_at = ?
+            WHERE id IN ({placeholders})
+            AND deleted_at IS NULL
+        """, [current_time] + request.ids)
+
+        deleted_count = cursor.rowcount
+        conn.commit()
+
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "message": f"成功删除{deleted_count}条记录"
+        }
+
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+    finally:
+        conn.close()

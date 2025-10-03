@@ -54,6 +54,9 @@ def init_database():
     if 'local_file_path' not in columns:
         cursor.execute("ALTER TABLE upload_history ADD COLUMN local_file_path VARCHAR(500)")
 
+    if 'deleted_at' not in columns:
+        cursor.execute("ALTER TABLE upload_history ADD COLUMN deleted_at TEXT DEFAULT NULL")
+
     # 创建索引
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_business_id
@@ -83,6 +86,11 @@ def init_database():
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_doc_type_upload_time
         ON upload_history(doc_type, upload_time)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_deleted_at
+        ON upload_history(deleted_at)
     """)
 
     conn.commit()
