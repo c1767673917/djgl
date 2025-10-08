@@ -77,10 +77,10 @@ pip install -r requirements.txt
 # 服务端口（默认10000）
 PORT=10000
 
-# 用友云配置（已配置好，无需修改）
-YONYOU_APP_KEY=2b2c5f61d8734cd49e76f8f918977c5d
-YONYOU_APP_SECRET=61bc68be07201201142a8bf751a59068df9833e1
-YONYOU_BUSINESS_TYPE=onbip-scm-scmsa
+# 用友云配置（必需，请设置您的实际密钥）
+YONYOU_APP_KEY=your_app_key_here
+YONYOU_APP_SECRET=your_app_secret_here
+YONYOU_BUSINESS_TYPE=yonbip-scm-scmsa
 
 # 上传限制
 MAX_FILE_SIZE=10485760          # 单文件最大10MB
