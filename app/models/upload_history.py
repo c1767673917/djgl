@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+from app.core.timezone import get_beijing_now_naive
 
 
 class UploadHistory:
@@ -27,7 +28,7 @@ class UploadHistory:
         self.file_name = file_name
         self.file_size = file_size
         self.file_extension = file_extension
-        self.upload_time = upload_time or datetime.now()
+        self.upload_time = upload_time or get_beijing_now_naive()
         self.status = status
         self.error_code = error_code
         self.error_message = error_message

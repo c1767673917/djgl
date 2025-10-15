@@ -12,6 +12,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from app.core.database import get_db_connection
 from app.core.config import get_settings
+from app.core.timezone import get_beijing_now_naive
 
 settings = get_settings()
 router = APIRouter()
@@ -171,7 +172,7 @@ async def export_records(
 
     # 创建临时目录和ZIP文件
     temp_dir = tempfile.mkdtemp()
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = get_beijing_now_naive().strftime('%Y%m%d_%H%M%S')
     zip_filename = f"upload_records_{timestamp}.zip"
     zip_path = os.path.join(temp_dir, zip_filename)
 
@@ -319,8 +320,8 @@ async def delete_records(request: DeleteRecordsRequest) -> Dict[str, Any]:
         # 构建IN子句的占位符
         placeholders = ','.join('?' * len(request.ids))
 
-        # 软删除：设置deleted_at字段为当前时间
-        current_time = datetime.now().isoformat()
+        # 软删除：设置deleted_at字段为当前时间（北京时间）
+        current_time = get_beijing_now_naive().isoformat()
         cursor.execute(f"""
             UPDATE upload_history
             SET deleted_at = ?
