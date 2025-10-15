@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import httpx
 from app.core.config import get_settings
+from app.core.timezone import get_beijing_now
 
 settings = get_settings()
 
@@ -41,7 +42,7 @@ class YonYouClient:
         """获取access_token，支持缓存"""
         # 检查缓存
         if not force_refresh and self._token_cache:
-            if datetime.now() < self._token_cache["expires_at"]:
+            if get_beijing_now() < self._token_cache["expires_at"]:
                 return self._token_cache["access_token"]
 
         # 生成时间戳(毫秒)
@@ -66,7 +67,7 @@ class YonYouClient:
             # 缓存token
             self._token_cache = {
                 "access_token": access_token,
-                "expires_at": datetime.now() + timedelta(seconds=expires_in - 60)  # 提前60秒过期
+                "expires_at": get_beijing_now() + timedelta(seconds=expires_in - 60)  # 提前60秒过期
             }
 
             return access_token

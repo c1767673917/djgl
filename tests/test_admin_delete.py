@@ -17,6 +17,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.database import get_db_connection
+from app.core.timezone import get_beijing_now_naive
 
 
 # ============================================================================
@@ -333,13 +334,13 @@ class TestSoftDeleteStrategy:
 
         with patch('app.api.admin.get_db_connection', side_effect=create_mock_db_factory(db_path)):
             # 记录删除前的时间
-            before_delete = datetime.now()
+            before_delete = get_beijing_now_naive()
 
             # 执行删除
             response = delete_records(test_client, [1])
 
             # 记录删除后的时间
-            after_delete = datetime.now()
+            after_delete = get_beijing_now_naive()
 
             assert response.status_code == 200
 

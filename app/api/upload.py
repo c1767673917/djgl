@@ -221,14 +221,21 @@ async def upload_files(
 
 def save_upload_history(history: UploadHistory):
     """保存上传历史到数据库"""
+    from app.core.timezone import get_beijing_now_naive
+
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # 获取北京时间
+    beijing_now = get_beijing_now_naive()
+    upload_time_str = beijing_now.isoformat()
 
     cursor.execute("""
         INSERT INTO upload_history
         (business_id, doc_number, doc_type, file_name, file_size, file_extension,
-         status, error_code, error_message, yonyou_file_id, retry_count, local_file_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
+         local_file_path, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         history.business_id,
         history.doc_number,
@@ -236,12 +243,15 @@ def save_upload_history(history: UploadHistory):
         history.file_name,
         history.file_size,
         history.file_extension,
+        upload_time_str,
         history.status,
         history.error_code,
         history.error_message,
         history.yonyou_file_id,
         history.retry_count,
-        history.local_file_path
+        history.local_file_path,
+        upload_time_str,
+        upload_time_str
     ))
 
     conn.commit()

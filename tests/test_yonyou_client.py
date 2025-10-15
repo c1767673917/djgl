@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime, timedelta
 
 from app.core.yonyou_client import YonYouClient
+from app.core.timezone import get_beijing_now
 
 
 class TestSignatureGeneration:
@@ -150,7 +151,7 @@ class TestTokenManagement:
             await client.get_access_token()
 
             # 手动设置token为已过期
-            client._token_cache["expires_at"] = datetime.now() - timedelta(seconds=1)
+            client._token_cache["expires_at"] = get_beijing_now() - timedelta(seconds=1)
 
             # 再次获取(应该自动刷新)
             await client.get_access_token()
@@ -187,7 +188,7 @@ class TestTokenManagement:
 
             # 验证过期时间是否提前60秒
             expires_at = client._token_cache["expires_at"]
-            expected_expires_at = datetime.now() + timedelta(seconds=3600 - 60)
+            expected_expires_at = get_beijing_now() + timedelta(seconds=3600 - 60)
 
             # 允许1秒的误差
             time_diff = abs((expires_at - expected_expires_at).total_seconds())
