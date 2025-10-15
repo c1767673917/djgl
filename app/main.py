@@ -69,6 +69,13 @@ async def upload_page(
     return FileResponse("app/static/index.html")
 
 
+# 健康检查端点
+@app.get("/api/health")
+async def health_check():
+    """健康检查端点，用于Docker健康检查"""
+    return {"status": "healthy", "app": settings.APP_NAME, "version": settings.APP_VERSION}
+
+
 # 管理页面路由
 @app.get("/admin")
 async def admin_page():
