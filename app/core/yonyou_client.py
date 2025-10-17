@@ -79,9 +79,21 @@ class YonYouClient:
         file_content: bytes,
         file_name: str,
         business_id: str,
-        retry_count: int = 0
+        retry_count: int = 0,
+        business_type: Optional[str] = None
     ) -> Dict[str, Any]:
-        """上传文件到用友云"""
+        """上传文件到用友云
+
+        Args:
+            file_content: 文件二进制内容
+            file_name: 文件名
+            business_id: 业务单据ID
+            retry_count: 重试次数（内部使用）
+            business_type: 业务类型（可选,默认使用实例配置）
+
+        Returns:
+            上传结果字典
+        """
         try:
             # 获取access_token
             access_token = await self.get_access_token()
@@ -89,8 +101,11 @@ class YonYouClient:
             # URL编码token(token中包含特殊字符如/, +, =等需要编码)
             encoded_token = urllib.parse.quote(access_token, safe='')
 
-            # 构建请求URL
-            url = f"{self.upload_url}?access_token={encoded_token}&businessType={self.business_type}&businessId={business_id}"
+            # 使用传入的business_type,如果未提供则使用实例默认值
+            effective_business_type = business_type or self.business_type
+
+            # 构建请求URL（使用动态businessType）
+            url = f"{self.upload_url}?access_token={encoded_token}&businessType={effective_business_type}&businessId={business_id}"
 
             # 构建multipart/form-data请求
             files = {
@@ -114,7 +129,7 @@ class YonYouClient:
                 error_code = str(result.get("code"))
                 if error_code in ["1090003500065", "310036"] and retry_count == 0:
                     access_token = await self.get_access_token(force_refresh=True)
-                    return await self.upload_file(file_content, file_name, business_id, retry_count + 1)
+                    return await self.upload_file(file_content, file_name, business_id, retry_count + 1, business_type)
 
                 return {
                     "success": False,

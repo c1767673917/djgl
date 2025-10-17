@@ -13,6 +13,13 @@ router = APIRouter()
 settings = get_settings()
 yonyou_client = YonYouClient()
 
+# doc_type到businessType的映射常量
+DOC_TYPE_TO_BUSINESS_TYPE = {
+    "销售": "yonbip-scm-scmsa",
+    "转库": "yonbip-scm-stock",
+    "其他": "yonbip-scm-stock"
+}
+
 
 def generate_unique_filename(doc_number: str, file_extension: str, storage_path: str) -> tuple[str, str]:
     """
@@ -93,6 +100,13 @@ async def upload_files(
             detail=f"doc_type必须为以下值之一: {', '.join(valid_doc_types)}"
         )
 
+    # 获取映射后的businessType
+    business_type = DOC_TYPE_TO_BUSINESS_TYPE.get(doc_type, settings.YONYOU_BUSINESS_TYPE)
+
+    # 调试日志：记录未覆盖的doc_type（生产环境可移除）
+    if doc_type not in DOC_TYPE_TO_BUSINESS_TYPE:
+        print(f"[WARNING] doc_type '{doc_type}' 未在映射中，使用默认值: {business_type}")
+
     # 验证doc_number格式
     if not doc_number or len(doc_number.strip()) == 0:
         raise HTTPException(status_code=400, detail="doc_number不能为空")
@@ -155,7 +169,9 @@ async def upload_files(
                 result = await yonyou_client.upload_file(
                     file_content,
                     new_filename,  # 上传到用友云时使用新文件名
-                    business_id
+                    business_id,
+                    retry_count=0,
+                    business_type=business_type  # 传递映射后的businessType
                 )
 
                 if result["success"]:
