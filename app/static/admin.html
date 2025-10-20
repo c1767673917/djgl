@@ -123,6 +123,58 @@
     <!-- Toast提示 -->
     <div class="toast" id="toast"></div>
 
+    <!-- 图片预览模态框 -->
+    <div id="imagePreviewModal" class="image-modal" style="display: none;">
+        <div class="image-modal-overlay"></div>
+        <div class="image-modal-container">
+            <!-- 关闭按钮 -->
+            <button class="image-modal-close" aria-label="关闭">&times;</button>
+
+            <!-- 工具栏 -->
+            <div class="image-modal-toolbar">
+                <button class="toolbar-btn" id="btnZoomOut" title="缩小(-)">
+                    <span class="btn-icon">-</span>
+                </button>
+                <span class="zoom-level" id="zoomLevel">100%</span>
+                <button class="toolbar-btn" id="btnZoomIn" title="放大(+)">
+                    <span class="btn-icon">+</span>
+                </button>
+                <button class="toolbar-btn" id="btnRotateLeft" title="逆时针旋转">
+                    <span class="btn-icon">↺</span>
+                </button>
+                <button class="toolbar-btn" id="btnRotateRight" title="顺时针旋转">
+                    <span class="btn-icon">↻</span>
+                </button>
+                <button class="toolbar-btn" id="btnReset" title="重置">
+                    <span class="btn-icon">⟲</span>
+                </button>
+            </div>
+
+            <!-- 图片容器 -->
+            <div class="image-modal-content">
+                <!-- 加载状态 -->
+                <div class="image-loading" id="imageLoading">
+                    <div class="loading-spinner"></div>
+                    <p>加载中...</p>
+                </div>
+
+                <!-- 图片 -->
+                <img id="previewImage" class="preview-image" alt="预览图片" style="display: none;">
+
+                <!-- 错误提示 -->
+                <div class="image-error" id="imageError" style="display: none;">
+                    <p>❌ 图片加载失败</p>
+                    <small id="errorMessage">文件不存在或无法访问</small>
+                </div>
+            </div>
+
+            <!-- 文件名标题 -->
+            <div class="image-modal-footer">
+                <span id="imageFileName">文件名</span>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/admin.js"></script>
 </body>
 </html>

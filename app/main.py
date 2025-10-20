@@ -25,6 +25,12 @@ app.add_middleware(
 # 静态文件
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+# 挂载上传文件目录(用于图片预览)
+from pathlib import Path
+uploaded_files_path = Path(settings.LOCAL_STORAGE_PATH)
+if uploaded_files_path.exists():
+    app.mount("/uploaded_files", StaticFiles(directory=str(uploaded_files_path)), name="uploaded_files")
+
 # 路由
 app.include_router(upload.router, prefix="/api", tags=["upload"])
 app.include_router(history.router, prefix="/api", tags=["history"])

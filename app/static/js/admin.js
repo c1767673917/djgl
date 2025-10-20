@@ -13,6 +13,17 @@ const state = {
     selectedIds: new Set()  // 跟踪选中的记录ID
 };
 
+// 图片预览配置常量
+const IMAGE_PREVIEW_CONFIG = {
+    ZOOM_MIN: 0.1,              // 最小缩放比例 10%
+    ZOOM_MAX: 5.0,              // 最大缩放比例 500%
+    ZOOM_STEP_BUTTON: 0.2,      // 按钮缩放步长 20%
+    ZOOM_STEP_WHEEL: 0.1,       // 滚轮缩放步长 10%
+    WHEEL_DEBOUNCE_MS: 50,      // 滚轮防抖延迟 50ms
+    IMAGE_PATH_PREFIX: '/uploaded_files/',  // 图片路径前缀
+    LOAD_TIMEOUT_MS: 30000      // 图片加载超时 30秒
+};
+
 // DOM元素
 const elements = {
     // 统计
@@ -75,6 +86,9 @@ function init() {
     // 删除相关事件
     elements.btnBatchDelete.addEventListener('click', handleBatchDelete);
     elements.selectAll.addEventListener('change', handleSelectAll);
+
+    // 图片预览事件委托(使用事件委托,监听表格上的点击)
+    elements.tableBody.addEventListener('click', handleFileNameClick);
 
     // 加载数据
     loadStatistics();
@@ -158,7 +172,11 @@ function renderTable(records) {
             <td>${record.doc_type || '-'}</td>
             <td>${record.business_id}</td>
             <td>${formatDateTime(record.upload_time)}</td>
-            <td class="file-name" title="${record.file_name}">${record.file_name}</td>
+            <td>
+                <span class="file-name file-name-clickable" data-filename="${record.file_name}" title="${record.file_name}">
+                    ${record.file_name}
+                </span>
+            </td>
             <td>${formatFileSize(record.file_size)}</td>
             <td>
                 <span class="status-badge ${record.status}">
@@ -442,6 +460,228 @@ async function handleDeleteRow(recordId) {
     } catch (error) {
         showToast('删除失败: ' + error.message, 'error');
     }
+}
+
+// ==================== 图片预览功能 ====================
+
+// 图片预览状态
+const imagePreviewState = {
+    scale: 1,        // 缩放比例(1 = 100%)
+    rotation: 0,     // 旋转角度(0, 90, 180, 270)
+    minScale: IMAGE_PREVIEW_CONFIG.ZOOM_MIN,   // 最小缩放10%
+    maxScale: IMAGE_PREVIEW_CONFIG.ZOOM_MAX    // 最大缩放500%
+};
+
+// 图片预览DOM元素
+const imagePreviewElements = {
+    modal: document.getElementById('imagePreviewModal'),
+    overlay: null,  // 在显示时获取
+    closeBtn: null,
+    previewImage: document.getElementById('previewImage'),
+    imageLoading: document.getElementById('imageLoading'),
+    imageError: document.getElementById('imageError'),
+    errorMessage: document.getElementById('errorMessage'),
+    imageFileName: document.getElementById('imageFileName'),
+    zoomLevel: document.getElementById('zoomLevel'),
+    btnZoomIn: document.getElementById('btnZoomIn'),
+    btnZoomOut: document.getElementById('btnZoomOut'),
+    btnRotateLeft: document.getElementById('btnRotateLeft'),
+    btnRotateRight: document.getElementById('btnRotateRight'),
+    btnReset: document.getElementById('btnReset')
+};
+
+// 处理文件名点击事件(事件委托)
+function handleFileNameClick(event) {
+    // 检查是否点击了文件名元素
+    const fileNameElement = event.target.closest('.file-name-clickable');
+    if (!fileNameElement) return;
+
+    const filename = fileNameElement.dataset.filename;
+    if (filename) {
+        openImagePreview(filename);
+    }
+}
+
+// 打开图片预览模态框
+function openImagePreview(filename) {
+    // 重置状态
+    imagePreviewState.scale = 1;
+    imagePreviewState.rotation = 0;
+
+    // 显示模态框
+    imagePreviewElements.modal.style.display = 'flex';
+
+    // 显示加载状态
+    imagePreviewElements.imageLoading.style.display = 'block';
+    imagePreviewElements.previewImage.style.display = 'none';
+    imagePreviewElements.imageError.style.display = 'none';
+
+    // 设置文件名
+    imagePreviewElements.imageFileName.textContent = filename;
+
+    // 更新缩放显示
+    updateZoomDisplay();
+
+    // 加载图片（使用URL编码处理特殊字符）
+    const imageUrl = `${IMAGE_PREVIEW_CONFIG.IMAGE_PATH_PREFIX}${encodeURIComponent(filename)}`;
+    const img = new Image();
+
+    // 添加加载超时处理
+    let loadTimeout = setTimeout(() => {
+        img.src = '';  // 取消加载
+        imagePreviewElements.imageLoading.style.display = 'none';
+        imagePreviewElements.imageError.style.display = 'block';
+        imagePreviewElements.errorMessage.textContent = '图片加载超时，请检查网络';
+        enableToolbarButtons(false);
+    }, IMAGE_PREVIEW_CONFIG.LOAD_TIMEOUT_MS);
+
+    img.onload = function() {
+        clearTimeout(loadTimeout);
+
+        // 隐藏加载状态
+        imagePreviewElements.imageLoading.style.display = 'none';
+
+        // 显示图片
+        imagePreviewElements.previewImage.src = imageUrl;
+        imagePreviewElements.previewImage.style.display = 'block';
+
+        // 显示图片尺寸信息
+        const sizeInfo = `${this.naturalWidth} × ${this.naturalHeight}`;
+        imagePreviewElements.imageFileName.textContent = `${filename} (${sizeInfo})`;
+
+        // 启用工具栏按钮
+        enableToolbarButtons(true);
+
+        // 应用初始变换
+        applyImageTransform();
+    };
+
+    img.onerror = function() {
+        clearTimeout(loadTimeout);
+
+        // 隐藏加载状态
+        imagePreviewElements.imageLoading.style.display = 'none';
+
+        // 显示错误提示
+        imagePreviewElements.imageError.style.display = 'block';
+        imagePreviewElements.errorMessage.textContent = '文件不存在或无法访问';
+
+        // 禁用工具栏按钮
+        enableToolbarButtons(false);
+    };
+
+    img.src = imageUrl;
+
+    // 绑定事件(仅在首次打开时绑定)
+    if (!imagePreviewElements.overlay) {
+        imagePreviewElements.overlay = imagePreviewElements.modal.querySelector('.image-modal-overlay');
+        imagePreviewElements.closeBtn = imagePreviewElements.modal.querySelector('.image-modal-close');
+
+        // 点击遮罩层关闭
+        imagePreviewElements.overlay.addEventListener('click', closeImagePreview);
+
+        // 点击关闭按钮
+        imagePreviewElements.closeBtn.addEventListener('click', closeImagePreview);
+
+        // ESC键关闭
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && imagePreviewElements.modal.style.display === 'flex') {
+                closeImagePreview();
+            }
+        });
+
+        // 工具栏按钮事件
+        imagePreviewElements.btnZoomIn.addEventListener('click', () => zoomImage(IMAGE_PREVIEW_CONFIG.ZOOM_STEP_BUTTON));
+        imagePreviewElements.btnZoomOut.addEventListener('click', () => zoomImage(-IMAGE_PREVIEW_CONFIG.ZOOM_STEP_BUTTON));
+        imagePreviewElements.btnRotateLeft.addEventListener('click', () => rotateImage(-90));
+        imagePreviewElements.btnRotateRight.addEventListener('click', () => rotateImage(90));
+        imagePreviewElements.btnReset.addEventListener('click', resetImageTransform);
+
+        // 鼠标滚轮缩放
+        imagePreviewElements.previewImage.addEventListener('wheel', handleMouseWheel, { passive: false });
+    }
+}
+
+// 关闭图片预览
+function closeImagePreview() {
+    imagePreviewElements.modal.style.display = 'none';
+    imagePreviewElements.previewImage.src = '';
+}
+
+// 缩放图片
+function zoomImage(delta) {
+    const newScale = imagePreviewState.scale + delta;
+
+    // 限制范围
+    if (newScale < imagePreviewState.minScale || newScale > imagePreviewState.maxScale) {
+        return;
+    }
+
+    imagePreviewState.scale = newScale;
+    applyImageTransform();
+    updateZoomDisplay();
+}
+
+// 旋转图片
+function rotateImage(degrees) {
+    imagePreviewState.rotation = (imagePreviewState.rotation + degrees) % 360;
+
+    // 处理负数角度
+    if (imagePreviewState.rotation < 0) {
+        imagePreviewState.rotation += 360;
+    }
+
+    applyImageTransform();
+}
+
+// 重置图片变换
+function resetImageTransform() {
+    imagePreviewState.scale = 1;
+    imagePreviewState.rotation = 0;
+    applyImageTransform();
+    updateZoomDisplay();
+}
+
+// 应用图片变换(CSS transform)
+function applyImageTransform() {
+    const transform = `scale(${imagePreviewState.scale}) rotate(${imagePreviewState.rotation}deg)`;
+    imagePreviewElements.previewImage.style.transform = transform;
+}
+
+// 更新缩放显示
+function updateZoomDisplay() {
+    const percentage = Math.round(imagePreviewState.scale * 100);
+    imagePreviewElements.zoomLevel.textContent = `${percentage}%`;
+
+    // 更新按钮状态
+    imagePreviewElements.btnZoomOut.disabled = imagePreviewState.scale <= imagePreviewState.minScale;
+    imagePreviewElements.btnZoomIn.disabled = imagePreviewState.scale >= imagePreviewState.maxScale;
+}
+
+// 启用/禁用工具栏按钮
+function enableToolbarButtons(enabled) {
+    imagePreviewElements.btnZoomIn.disabled = !enabled;
+    imagePreviewElements.btnZoomOut.disabled = !enabled;
+    imagePreviewElements.btnRotateLeft.disabled = !enabled;
+    imagePreviewElements.btnRotateRight.disabled = !enabled;
+    imagePreviewElements.btnReset.disabled = !enabled;
+}
+
+// 处理鼠标滚轮缩放(带防抖)
+let wheelTimeout = null;
+function handleMouseWheel(event) {
+    event.preventDefault();
+
+    // 防抖处理
+    if (wheelTimeout) {
+        clearTimeout(wheelTimeout);
+    }
+
+    wheelTimeout = setTimeout(() => {
+        // 向上滚动放大,向下滚动缩小
+        const delta = event.deltaY > 0 ? -IMAGE_PREVIEW_CONFIG.ZOOM_STEP_WHEEL : IMAGE_PREVIEW_CONFIG.ZOOM_STEP_WHEEL;
+        zoomImage(delta);
+    }, IMAGE_PREVIEW_CONFIG.WHEEL_DEBOUNCE_MS);
 }
 
 // 启动应用
