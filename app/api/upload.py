@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import List
 import asyncio
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from app.core.config import get_settings
@@ -23,7 +24,12 @@ DOC_TYPE_TO_BUSINESS_TYPE = {
 
 def generate_unique_filename(doc_number: str, file_extension: str, storage_path: str) -> tuple[str, str]:
     """
-    生成唯一的文件名
+    生成唯一的文件名（并发安全）
+
+    使用 UUID4 + 时间戳 的组合确保文件名唯一性，避免并发上传时的命名冲突。
+
+    文件名格式: {doc_number}_{timestamp}_{uuid_short}{extension}
+    示例: SO20250103001_20251020143025_a3f2b1c4.jpg
 
     Args:
         doc_number: 单据编号
@@ -33,16 +39,15 @@ def generate_unique_filename(doc_number: str, file_extension: str, storage_path:
     Returns:
         tuple: (新文件名, 完整路径)
     """
-    base_name = doc_number
-    counter = 1
-    new_filename = f"{base_name}{file_extension}"
-    full_path = os.path.join(storage_path, new_filename)
+    # 获取当前时间戳（精确到秒）
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-    # 如果文件名已存在，添加流水号
-    while os.path.exists(full_path):
-        new_filename = f"{base_name}-{counter}{file_extension}"
-        full_path = os.path.join(storage_path, new_filename)
-        counter += 1
+    # 生成8位短UUID（UUID4的前8个字符，已足够避免冲突）
+    short_uuid = str(uuid.uuid4()).replace('-', '')[:8]
+
+    # 构造文件名: 单据号_时间戳_短UUID.扩展名
+    new_filename = f"{doc_number}_{timestamp}_{short_uuid}{file_extension}"
+    full_path = os.path.join(storage_path, new_filename)
 
     return new_filename, full_path
 
