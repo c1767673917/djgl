@@ -24,6 +24,7 @@ async def get_admin_records(
     page_size: int = Query(20, ge=1, le=100, description="每页记录数"),
     search: Optional[str] = Query(None, description="搜索关键词（单据编号/类型）"),
     doc_type: Optional[str] = Query(None, description="单据类型筛选"),
+    product_type: Optional[str] = Query(None, description="产品类型筛选(如:油脂/快消)"),
     start_date: Optional[str] = Query(None, description="开始日期（YYYY-MM-DD）"),
     end_date: Optional[str] = Query(None, description="结束日期（YYYY-MM-DD）")
 ) -> Dict[str, Any]:
@@ -63,6 +64,10 @@ async def get_admin_records(
         where_clauses.append("doc_type = ?")
         params.append(doc_type)
 
+    if product_type:
+        where_clauses.append("product_type = ?")
+        params.append(product_type)
+
     if start_date:
         where_clauses.append("DATE(upload_time) >= ?")
         params.append(start_date)
@@ -83,7 +88,7 @@ async def get_admin_records(
 
     # 查询分页数据
     cursor.execute(f"""
-        SELECT id, business_id, doc_number, doc_type, file_name, file_size,
+        SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
                upload_time, status, error_message
         FROM upload_history
         WHERE {where_sql}
@@ -102,11 +107,12 @@ async def get_admin_records(
             "business_id": row[1],
             "doc_number": row[2],
             "doc_type": row[3],
-            "file_name": row[4],
-            "file_size": row[5],
-            "upload_time": row[6],
-            "status": row[7],
-            "error_message": row[8]
+            "product_type": row[4],
+            "file_name": row[5],
+            "file_size": row[6],
+            "upload_time": row[7],
+            "status": row[8],
+            "error_message": row[9]
         })
 
     return {
@@ -122,6 +128,7 @@ async def get_admin_records(
 async def export_records(
     search: Optional[str] = Query(None, description="搜索关键词"),
     doc_type: Optional[str] = Query(None, description="单据类型筛选"),
+    product_type: Optional[str] = Query(None, description="产品类型筛选"),
     start_date: Optional[str] = Query(None, description="开始日期"),
     end_date: Optional[str] = Query(None, description="结束日期")
 ):
@@ -148,6 +155,10 @@ async def export_records(
         where_clauses.append("doc_type = ?")
         params.append(doc_type)
 
+    if product_type:
+        where_clauses.append("product_type = ?")
+        params.append(product_type)
+
     if start_date:
         where_clauses.append("DATE(upload_time) >= ?")
         params.append(start_date)
@@ -160,7 +171,7 @@ async def export_records(
 
     # 查询所有匹配记录（包括local_file_path）
     cursor.execute(f"""
-        SELECT doc_number, doc_type, business_id, upload_time, file_name,
+        SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
                file_size, local_file_path
         FROM upload_history
         WHERE {where_sql}
@@ -184,13 +195,13 @@ async def export_records(
             ws.title = "上传记录"
 
             # 写入表头
-            headers = ["单据编号", "单据类型", "业务ID", "上传时间", "文件名", "文件大小(字节)"]
+            headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)"]
             ws.append(headers)
 
             # 写入数据并收集图片文件
             for row in rows:
-                doc_number, doc_type, business_id, upload_time, file_name, file_size, local_file_path = row
-                ws.append([doc_number, doc_type, business_id, upload_time, file_name, file_size])
+                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, local_file_path = row
+                ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size])
 
                 # 添加本地图片文件到ZIP（如果存在）
                 if local_file_path and os.path.exists(local_file_path):

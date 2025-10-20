@@ -31,6 +31,9 @@ def test_db_path() -> Generator[str, None, None]:
         CREATE TABLE IF NOT EXISTS upload_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             business_id VARCHAR(50) NOT NULL,
+            doc_number VARCHAR(100),
+            doc_type VARCHAR(20),
+            product_type TEXT DEFAULT NULL,
             file_name VARCHAR(255) NOT NULL,
             file_size INTEGER NOT NULL,
             file_extension VARCHAR(20),
@@ -40,14 +43,36 @@ def test_db_path() -> Generator[str, None, None]:
             error_message TEXT,
             yonyou_file_id VARCHAR(255),
             retry_count INTEGER DEFAULT 0,
+            local_file_path VARCHAR(500),
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT DEFAULT NULL
         )
     """)
 
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_business_id
         ON upload_history(business_id)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_doc_number
+        ON upload_history(doc_number)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_doc_type
+        ON upload_history(doc_type)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_product_type
+        ON upload_history(product_type)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_deleted_at
+        ON upload_history(deleted_at)
     """)
 
     conn.commit()

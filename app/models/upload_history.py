@@ -10,6 +10,7 @@ class UploadHistory:
         business_id: str = "",
         doc_number: Optional[str] = None,
         doc_type: Optional[str] = None,
+        product_type: Optional[str] = None,
         file_name: str = "",
         file_size: int = 0,
         file_extension: str = "",
@@ -25,6 +26,7 @@ class UploadHistory:
         self.business_id = business_id
         self.doc_number = doc_number
         self.doc_type = doc_type
+        self.product_type = product_type
         self.file_name = file_name
         self.file_size = file_size
         self.file_extension = file_extension

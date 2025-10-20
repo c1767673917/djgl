@@ -57,6 +57,10 @@ def init_database():
     if 'deleted_at' not in columns:
         cursor.execute("ALTER TABLE upload_history ADD COLUMN deleted_at TEXT DEFAULT NULL")
 
+    # 添加产品类型字段 (支持产品维度分类管理)
+    if 'product_type' not in columns:
+        cursor.execute("ALTER TABLE upload_history ADD COLUMN product_type TEXT DEFAULT NULL")
+
     # 创建索引
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_business_id
@@ -91,6 +95,12 @@ def init_database():
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_deleted_at
         ON upload_history(deleted_at)
+    """)
+
+    # 产品类型索引 (优化产品类型筛选查询性能)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_product_type
+        ON upload_history(product_type)
     """)
 
     conn.commit()

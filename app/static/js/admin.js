@@ -7,6 +7,7 @@ const state = {
     filters: {
         search: '',
         docType: '',
+        productType: '',
         startDate: '',
         endDate: ''
     },
@@ -34,6 +35,7 @@ const elements = {
     // 筛选
     searchInput: document.getElementById('searchInput'),
     docTypeFilter: document.getElementById('docTypeFilter'),
+    productTypeFilter: document.getElementById('productTypeFilter'),
     startDateInput: document.getElementById('startDateInput'),
     endDateInput: document.getElementById('endDateInput'),
     btnSearch: document.getElementById('btnSearch'),
@@ -126,6 +128,7 @@ async function loadRecords() {
 
         if (state.filters.search) params.append('search', state.filters.search);
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
+        if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
@@ -170,7 +173,7 @@ function renderTable(records) {
             </td>
             <td>${record.doc_number || '-'}</td>
             <td>${record.doc_type || '-'}</td>
-            <td>${record.business_id}</td>
+            <td>${record.product_type || ''}</td>
             <td>${formatDateTime(record.upload_time)}</td>
             <td>
                 <span class="file-name file-name-clickable" data-filename="${record.file_name}" title="${record.file_name}">
@@ -231,6 +234,7 @@ function goToPage(page) {
 function handleSearch() {
     state.filters.search = elements.searchInput.value.trim();
     state.filters.docType = elements.docTypeFilter.value;
+    state.filters.productType = elements.productTypeFilter.value;
     state.filters.startDate = elements.startDateInput.value;
     state.filters.endDate = elements.endDateInput.value;
 
@@ -242,12 +246,14 @@ function handleSearch() {
 function handleReset() {
     elements.searchInput.value = '';
     elements.docTypeFilter.value = '';
+    elements.productTypeFilter.value = '';
     elements.startDateInput.value = '';
     elements.endDateInput.value = '';
 
     state.filters = {
         search: '',
         docType: '',
+        productType: '',
         startDate: '',
         endDate: ''
     };
@@ -264,6 +270,7 @@ async function handleExport() {
 
         if (state.filters.search) params.append('search', state.filters.search);
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
+        if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 

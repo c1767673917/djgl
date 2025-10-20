@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import List
+from typing import List, Optional
 import asyncio
 import os
 import uuid
@@ -73,6 +73,7 @@ async def upload_files(
     business_id: str = Form(..., description="业务单据ID"),
     doc_number: str = Form(..., description="单据编号"),
     doc_type: str = Form(..., description="单据类型"),
+    product_type: Optional[str] = Form(None, description="产品类型(如:油脂/快消)"),
     files: List[UploadFile] = File(...)
 ):
     """
@@ -162,6 +163,7 @@ async def upload_files(
                 business_id=business_id,
                 doc_number=doc_number,
                 doc_type=doc_type,
+                product_type=product_type,
                 file_name=new_filename,  # 使用新文件名
                 file_size=file_size,
                 file_extension=file_extension,
@@ -253,14 +255,15 @@ def save_upload_history(history: UploadHistory):
 
     cursor.execute("""
         INSERT INTO upload_history
-        (business_id, doc_number, doc_type, file_name, file_size, file_extension,
+        (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
          upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
          local_file_path, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         history.business_id,
         history.doc_number,
         history.doc_type,
+        history.product_type,
         history.file_name,
         history.file_size,
         history.file_extension,

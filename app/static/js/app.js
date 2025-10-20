@@ -3,6 +3,7 @@ const state = {
     businessId: '',
     docNumber: '',
     docType: '',
+    productType: '',  // 产品类型(如:油脂/快消)
     selectedFiles: [],
     maxFiles: 10,
     maxFileSize: 10 * 1024 * 1024, // 10MB
@@ -39,6 +40,7 @@ function init() {
     state.businessId = urlParams.get('business_id');
     state.docNumber = urlParams.get('doc_number');
     state.docType = urlParams.get('doc_type');
+    state.productType = urlParams.get('product_type') || '';  // 产品类型(可选参数)
 
     // 验证必填参数
     if (!state.businessId || !/^\d+$/.test(state.businessId)) {
@@ -261,6 +263,9 @@ async function uploadFiles() {
     formData.append('business_id', state.businessId);
     formData.append('doc_number', state.docNumber);
     formData.append('doc_type', state.docType);
+    if (state.productType) {
+        formData.append('product_type', state.productType);  // 添加产品类型参数(如果存在)
+    }
     state.selectedFiles.forEach(file => {
         formData.append('files', file);
     });
