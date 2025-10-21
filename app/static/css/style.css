@@ -369,6 +369,16 @@ body {
     margin-left: 10px;
 }
 
+.history-item .status-badge.pending {
+    background: #f0f0f0;
+    color: #8c8c8c;
+}
+
+.history-item .status-badge.uploading {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
 .history-item .status-badge.success {
     background: #f6ffed;
     color: #52c41a;

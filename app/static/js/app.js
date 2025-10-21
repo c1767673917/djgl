@@ -294,43 +294,29 @@ async function uploadFiles() {
             throw new Error(result.detail || '上传失败');
         }
 
-        // 更新进度
+        // 异步上传：所有文件都已提交到后台处理
         const progressItems = elements.progressList.querySelectorAll('.progress-item');
-        result.results.forEach((item, index) => {
+        result.records.forEach((record, index) => {
             const statusEl = progressItems[index].querySelector('.status');
 
-            if (item.success) {
-                statusEl.textContent = '✓';
-                statusEl.className = 'status success';
-            } else {
-                statusEl.textContent = '✗';
-                statusEl.className = 'status error';
-
-                // 显示错误信息
-                const errorMsg = document.createElement('div');
-                errorMsg.className = 'error-msg';
-                errorMsg.textContent = item.error_message || '上传失败';
-                progressItems[index].appendChild(errorMsg);
-            }
+            // 标记为已提交（后台处理中）
+            statusEl.textContent = '✓';
+            statusEl.className = 'status success';
         });
 
-        // 更新总进度
-        const percent = Math.round((result.succeeded / result.total) * 100);
-        elements.progressBar.style.width = `${percent}%`;
-        elements.progressText.textContent = `${result.succeeded}/${result.total}`;
+        // 更新总进度（全部提交成功）
+        elements.progressBar.style.width = '100%';
+        elements.progressText.textContent = `${result.total}/${result.total}`;
 
         // 显示结果提示
-        if (result.failed === 0) {
-            showToast(`全部上传成功！`, 'success');
+        showToast(`已提交${result.total}张图片，正在后台上传到用友云...`, 'success');
 
-            // 3秒后清空
-            setTimeout(() => {
-                clearFiles();
-                elements.progressSection.style.display = 'none';
-            }, 3000);
-        } else {
-            showToast(`上传完成，成功${result.succeeded}个，失败${result.failed}个`, 'error');
-        }
+        // 3秒后清空并提示查看历史
+        setTimeout(() => {
+            clearFiles();
+            elements.progressSection.style.display = 'none';
+            showToast('可在"查看上传历史"中查看最终上传状态', 'info');
+        }, 3000);
 
     } catch (error) {
         showToast(error.message, 'error');
@@ -354,21 +340,31 @@ async function showHistory() {
         if (result.total_count === 0) {
             elements.historyList.innerHTML = '<p style="text-align: center; color: #999;">暂无上传记录</p>';
         } else {
-            elements.historyList.innerHTML = result.records.map(record => `
-                <div class="history-item">
-                    <div class="filename">
-                        ${record.file_name}
-                        <span class="status-badge ${record.status}">
-                            ${record.status === 'success' ? '成功' : '失败'}
-                        </span>
+            elements.historyList.innerHTML = result.records.map(record => {
+                // 状态文字映射
+                const statusText = {
+                    'pending': '等待中',
+                    'uploading': '上传中',
+                    'success': '成功',
+                    'failed': '失败'
+                };
+
+                return `
+                    <div class="history-item">
+                        <div class="filename">
+                            ${record.file_name}
+                            <span class="status-badge ${record.status}">
+                                ${statusText[record.status] || record.status}
+                            </span>
+                        </div>
+                        <div class="meta">
+                            <div>大小: ${formatFileSize(record.file_size)}</div>
+                            <div>时间: ${formatDateTime(record.upload_time)}</div>
+                            ${record.error_message ? `<div style="color: #ff4d4f;">错误: ${record.error_message}</div>` : ''}
+                        </div>
                     </div>
-                    <div class="meta">
-                        <div>大小: ${formatFileSize(record.file_size)}</div>
-                        <div>时间: ${formatDateTime(record.upload_time)}</div>
-                        ${record.error_message ? `<div style="color: #ff4d4f;">错误: ${record.error_message}</div>` : ''}
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         elements.historyModal.style.display = 'flex';
