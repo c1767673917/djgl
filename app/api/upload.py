@@ -113,6 +113,12 @@ async def background_upload_to_yonyou(
 
     conn = None
     try:
+        # 先保存文件到本地（无论上传成功与否都保留文件）
+        try:
+            save_file_locally(file_content, local_file_path)
+        except Exception as e:
+            print(f"本地文件保存失败: {str(e)}")
+
         # 上传到用友云（保持现有重试机制）
         yonyou_file_id = None
         error_code = None
@@ -156,14 +162,8 @@ async def background_upload_to_yonyou(
                     updated_at = ?
                 WHERE id = ?
             """, (yonyou_file_id, retry_count, get_beijing_now_naive().isoformat(), record_id))
-
-            # 保存文件到本地
-            try:
-                save_file_locally(file_content, local_file_path)
-            except Exception as e:
-                print(f"本地文件保存失败: {str(e)}")
         else:
-            # 上传失败
+            # 上传失败（文件已保存到本地）
             cursor.execute("""
                 UPDATE upload_history
                 SET status = 'failed',

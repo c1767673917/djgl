@@ -217,8 +217,8 @@ async def export_records(
                 doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, status, local_file_path = row
                 ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size, status])
 
-                # 添加本地图片文件到ZIP（仅成功的记录有本地文件）
-                if status == 'success' and local_file_path and os.path.exists(local_file_path):
+                # 添加本地图片文件到ZIP（所有状态的记录，只要文件存在就添加）
+                if local_file_path and os.path.exists(local_file_path):
                     # 在ZIP中使用相对路径：images/文件名
                     arcname = os.path.join("images", os.path.basename(local_file_path))
                     zipf.write(local_file_path, arcname=arcname)
@@ -458,5 +458,117 @@ async def update_check_status(
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+    finally:
+        conn.close()
+
+
+@router.get("/files/{record_id}/preview")
+async def preview_file(record_id: int):
+    """
+    预览文件（返回图片用于浏览器直接显示）
+
+    路径参数:
+    - record_id: 记录ID
+
+    响应:
+    - 200: 返回图片文件内容（浏览器直接显示）
+    - 404: 记录不存在、已删除或文件不存在
+    - 500: 服务器错误
+
+    支持的图片格式: jpg, jpeg, png, gif, bmp, webp
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 查询文件路径和扩展名
+        cursor.execute("""
+            SELECT local_file_path, file_extension, file_name
+            FROM upload_history
+            WHERE id = ? AND deleted_at IS NULL
+        """, [record_id])
+
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+
+        local_file_path, file_extension, file_name = row
+
+        # 检查文件是否存在
+        if not local_file_path or not os.path.exists(local_file_path):
+            raise HTTPException(status_code=404, detail="文件不存在")
+
+        # 根据文件扩展名确定 MIME 类型
+        extension_to_mime = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".gif": "image/gif",
+            ".bmp": "image/bmp",
+            ".webp": "image/webp"
+        }
+        media_type = extension_to_mime.get(file_extension.lower(), "application/octet-stream")
+
+        # 返回文件用于预览（浏览器直接显示）
+        return FileResponse(
+            path=local_file_path,
+            media_type=media_type,
+            filename=file_name
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"预览失败: {str(e)}")
+    finally:
+        conn.close()
+
+
+@router.get("/files/{record_id}/download")
+async def download_file(record_id: int):
+    """
+    下载单个文件
+
+    路径参数:
+    - record_id: 记录ID
+
+    响应:
+    - 200: 返回文件下载流（触发浏览器下载）
+    - 404: 记录不存在、已删除或文件不存在
+    - 500: 服务器错误
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 查询文件路径和文件名
+        cursor.execute("""
+            SELECT local_file_path, file_name
+            FROM upload_history
+            WHERE id = ? AND deleted_at IS NULL
+        """, [record_id])
+
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+
+        local_file_path, file_name = row
+
+        # 检查文件是否存在
+        if not local_file_path or not os.path.exists(local_file_path):
+            raise HTTPException(status_code=404, detail="文件不存在")
+
+        # 返回文件下载（浏览器触发下载）
+        return FileResponse(
+            path=local_file_path,
+            media_type="application/octet-stream",
+            filename=file_name,
+            headers={"Content-Disposition": f'attachment; filename="{file_name}"'}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
     finally:
         conn.close()
