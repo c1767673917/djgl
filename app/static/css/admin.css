@@ -673,3 +673,51 @@ body {
         gap: 6px;
     }
 }
+
+/* ==================== 检查按钮样式 ==================== */
+
+/* 检查按钮基础样式 */
+.btn-check {
+    padding: 4px 10px;
+    font-size: 13px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-right: 5px;
+}
+
+/* 未检查状态(蓝色) */
+.btn-check.unchecked {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-check.unchecked:hover {
+    background-color: #0056b3;
+}
+
+/* 已检查状态(绿色) */
+.btn-check.checked {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-check.checked:hover {
+    background-color: #1e7e34;
+}
+
+/* 禁用状态 */
+.btn-check:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 响应式: 移动端适配 */
+@media (max-width: 768px) {
+    .btn-check {
+        padding: 3px 8px;
+        font-size: 12px;
+        margin-right: 3px;
+    }
+}

@@ -93,10 +93,10 @@ async def get_admin_records(
     total_pages = (total + page_size - 1) // page_size
     offset = (page - 1) * page_size
 
-    # 查询分页数据（包含status和error_code字段）
+    # 查询分页数据（包含status、error_code和checked字段）
     cursor.execute(f"""
         SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
-               upload_time, status, error_code, error_message
+               upload_time, status, error_code, error_message, checked
         FROM upload_history
         WHERE {where_sql}
         ORDER BY upload_time DESC
@@ -120,7 +120,8 @@ async def get_admin_records(
             "upload_time": row[7],
             "status": row[8],
             "error_code": row[9],
-            "error_message": row[10]
+            "error_message": row[10],
+            "checked": bool(row[11])  # SQLite INTEGER转Python布尔值
         })
 
     return {
@@ -315,6 +316,18 @@ class DeleteRecordsRequest(BaseModel):
     ids: List[int]
 
 
+class UpdateCheckStatusRequest(BaseModel):
+    """更新检查状态请求模型"""
+    checked: bool
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "checked": True
+            }
+        }
+
+
 @router.delete("/records")
 async def delete_records(request: DeleteRecordsRequest) -> Dict[str, Any]:
     """
@@ -374,5 +387,76 @@ async def delete_records(request: DeleteRecordsRequest) -> Dict[str, Any]:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
+    finally:
+        conn.close()
+
+
+@router.patch("/records/{record_id}/check")
+async def update_check_status(
+    record_id: int,
+    request: UpdateCheckStatusRequest
+) -> Dict[str, Any]:
+    """
+    更新记录的检查状态
+
+    路径参数:
+    - record_id: 记录ID
+
+    请求体:
+    {
+        "checked": true/false  // 检查状态
+    }
+
+    响应格式:
+    {
+        "success": true,
+        "id": 123,
+        "checked": true,
+        "message": "检查状态已更新"
+    }
+
+    错误响应:
+    - 404: 记录不存在或已删除
+    - 422: 请求参数错误
+    - 500: 服务器内部错误
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 检查记录是否存在(且未被软删除)
+        cursor.execute("""
+            SELECT id FROM upload_history
+            WHERE id = ? AND deleted_at IS NULL
+        """, [record_id])
+
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+
+        # 更新检查状态(SQLite使用0/1表示布尔值)
+        checked_value = 1 if request.checked else 0
+        current_time = get_beijing_now_naive().isoformat()
+
+        cursor.execute("""
+            UPDATE upload_history
+            SET checked = ?, updated_at = ?
+            WHERE id = ?
+        """, [checked_value, current_time, record_id])
+
+        conn.commit()
+
+        return {
+            "success": True,
+            "id": record_id,
+            "checked": request.checked,
+            "message": "检查状态已更新"
+        }
+
+    except HTTPException:
+        # 重新抛出HTTP异常
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
     finally:
         conn.close()

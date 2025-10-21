@@ -198,6 +198,14 @@ function renderTable(records) {
                 ${renderStatusBadge(record.status, record.error_message)}
             </td>
             <td>
+                <button
+                    class="btn-check ${record.checked ? 'checked' : 'unchecked'}"
+                    data-id="${record.id}"
+                    data-filename="${record.file_name}"
+                    data-checked="${record.checked ? 'true' : 'false'}"
+                >
+                    ${record.checked ? '已检查' : '检查'}
+                </button>
                 <button class="btn-delete-row" data-id="${record.id}">删除</button>
             </td>
         </tr>
@@ -214,6 +222,11 @@ function renderTable(records) {
             const recordId = parseInt(e.target.dataset.id);
             handleDeleteRow(recordId);
         });
+    });
+
+    // 绑定检查按钮事件
+    document.querySelectorAll('.btn-check').forEach(button => {
+        button.addEventListener('click', handleCheckButtonClick);
     });
 
     // 更新批量删除按钮状态
@@ -732,6 +745,134 @@ function handleMouseWheel(event) {
         const delta = event.deltaY > 0 ? -IMAGE_PREVIEW_CONFIG.ZOOM_STEP_WHEEL : IMAGE_PREVIEW_CONFIG.ZOOM_STEP_WHEEL;
         zoomImage(delta);
     }, IMAGE_PREVIEW_CONFIG.WHEEL_DEBOUNCE_MS);
+}
+
+// ==================== 检查按钮功能 ====================
+
+/**
+ * 处理检查按钮点击事件
+ * 逻辑:
+ * - 未检查状态: 打开图片模态框 → 关闭后自动标记为已检查
+ * - 已检查状态: 弹出确认对话框 → 确认后改回未检查
+ */
+async function handleCheckButtonClick(event) {
+    const button = event.target;
+    const recordId = parseInt(button.dataset.id);
+    const filename = button.dataset.filename;
+    const isChecked = button.dataset.checked === 'true';
+
+    if (!isChecked) {
+        // 流程1: 未检查 → 打开图片 → 自动标记已检查
+        handleCheckImage(recordId, filename, button);
+    } else {
+        // 流程2: 已检查 → 确认撤销 → 改回未检查
+        handleUncheckConfirm(recordId, button);
+    }
+}
+
+/**
+ * 处理"检查"按钮点击 - 显示图片并自动标记已检查
+ */
+function handleCheckImage(recordId, filename, buttonElement) {
+    // 1. 打开图片模态框(复用现有函数)
+    openImagePreview(filename);
+
+    // 2. 监听模态框关闭事件
+    const modal = imagePreviewElements.modal;
+    const originalDisplay = modal.style.display;
+
+    // 轮询检测模态框关闭(每500ms检查一次)
+    const checkInterval = setInterval(async () => {
+        if (modal.style.display === 'none' && originalDisplay === 'flex') {
+            // 模态框已关闭
+            clearInterval(checkInterval);
+
+            // 3. 调用API更新状态为已检查
+            const success = await updateCheckStatus(recordId, true);
+
+            if (success) {
+                // 4. 更新按钮UI
+                updateCheckButtonUI(buttonElement, true);
+                showToast('已标记为已检查', 'success');
+            }
+        }
+    }, 500);
+
+    // 安全机制: 60秒后自动停止轮询(防止内存泄漏)
+    setTimeout(() => {
+        clearInterval(checkInterval);
+    }, 60000);
+}
+
+/**
+ * 处理"已检查"按钮点击 - 确认撤销检查状态
+ */
+async function handleUncheckConfirm(recordId, buttonElement) {
+    // 1. 显示确认对话框
+    const confirmed = confirm('确认改回检查状态吗?\n\n撤销后需要重新检查图片。');
+
+    if (!confirmed) {
+        return;  // 用户取消
+    }
+
+    // 2. 调用API更新状态为未检查
+    const success = await updateCheckStatus(recordId, false);
+
+    if (success) {
+        // 3. 更新按钮UI
+        updateCheckButtonUI(buttonElement, false);
+        showToast('已改回检查状态', 'success');
+    }
+}
+
+/**
+ * 调用后端API更新检查状态
+ * @param {number} recordId - 记录ID
+ * @param {boolean} checked - 检查状态
+ * @returns {Promise<boolean>} 是否成功
+ */
+async function updateCheckStatus(recordId, checked) {
+    try {
+        const response = await fetch(`/api/admin/records/${recordId}/check`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ checked })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || '更新失败');
+        }
+
+        return true;
+
+    } catch (error) {
+        showToast('更新检查状态失败: ' + error.message, 'error');
+        return false;
+    }
+}
+
+/**
+ * 更新检查按钮的UI状态
+ * @param {HTMLElement} buttonElement - 按钮DOM元素
+ * @param {boolean} checked - 新的检查状态
+ */
+function updateCheckButtonUI(buttonElement, checked) {
+    if (checked) {
+        // 已检查状态
+        buttonElement.textContent = '已检查';
+        buttonElement.classList.remove('unchecked');
+        buttonElement.classList.add('checked');
+        buttonElement.dataset.checked = 'true';
+    } else {
+        // 未检查状态
+        buttonElement.textContent = '检查';
+        buttonElement.classList.remove('checked');
+        buttonElement.classList.add('unchecked');
+        buttonElement.dataset.checked = 'false';
+    }
 }
 
 // 启动应用

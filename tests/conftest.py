@@ -46,7 +46,8 @@ def test_db_path() -> Generator[str, None, None]:
             local_file_path VARCHAR(500),
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at TEXT DEFAULT NULL
+            deleted_at TEXT DEFAULT NULL,
+            checked INTEGER DEFAULT 0
         )
     """)
 
@@ -73,6 +74,11 @@ def test_db_path() -> Generator[str, None, None]:
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_deleted_at
         ON upload_history(deleted_at)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_checked
+        ON upload_history(checked)
     """)
 
     conn.commit()

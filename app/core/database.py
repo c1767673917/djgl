@@ -61,6 +61,10 @@ def init_database():
     if 'product_type' not in columns:
         cursor.execute("ALTER TABLE upload_history ADD COLUMN product_type TEXT DEFAULT NULL")
 
+    # 添加检查状态字段 (支持质量检查工作流)
+    if 'checked' not in columns:
+        cursor.execute("ALTER TABLE upload_history ADD COLUMN checked INTEGER DEFAULT 0")
+
     # 创建索引
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_business_id
@@ -101,6 +105,12 @@ def init_database():
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_product_type
         ON upload_history(product_type)
+    """)
+
+    # 检查状态索引 (优化检查状态筛选查询性能)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_checked
+        ON upload_history(checked)
     """)
 
     conn.commit()
