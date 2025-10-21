@@ -25,6 +25,7 @@ async def get_admin_records(
     search: Optional[str] = Query(None, description="搜索关键词（单据编号/类型）"),
     doc_type: Optional[str] = Query(None, description="单据类型筛选"),
     product_type: Optional[str] = Query(None, description="产品类型筛选(如:油脂/快消)"),
+    status: Optional[str] = Query(None, description="状态筛选（pending/uploading/success/failed）"),
     start_date: Optional[str] = Query(None, description="开始日期（YYYY-MM-DD）"),
     end_date: Optional[str] = Query(None, description="结束日期（YYYY-MM-DD）")
 ) -> Dict[str, Any]:
@@ -36,6 +37,8 @@ async def get_admin_records(
     - page_size: 每页记录数（默认20，最大100）
     - search: 搜索关键词（模糊匹配单据编号或文件名）
     - doc_type: 单据类型筛选（销售/转库/其他）
+    - product_type: 产品类型筛选（油脂/快消）
+    - status: 状态筛选（pending/uploading/success/failed）
     - start_date: 开始日期（格式：YYYY-MM-DD）
     - end_date: 结束日期（格式：YYYY-MM-DD）
 
@@ -51,8 +54,8 @@ async def get_admin_records(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 构建WHERE条件（只显示成功的记录，且未删除）
-    where_clauses = ["status = 'success'", "deleted_at IS NULL"]
+    # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
+    where_clauses = ["deleted_at IS NULL"]
     params = []
 
     if search:
@@ -67,6 +70,10 @@ async def get_admin_records(
     if product_type:
         where_clauses.append("product_type = ?")
         params.append(product_type)
+
+    if status:
+        where_clauses.append("status = ?")
+        params.append(status)
 
     if start_date:
         where_clauses.append("DATE(upload_time) >= ?")
@@ -86,10 +93,10 @@ async def get_admin_records(
     total_pages = (total + page_size - 1) // page_size
     offset = (page - 1) * page_size
 
-    # 查询分页数据
+    # 查询分页数据（包含status和error_code字段）
     cursor.execute(f"""
         SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
-               upload_time, status, error_message
+               upload_time, status, error_code, error_message
         FROM upload_history
         WHERE {where_sql}
         ORDER BY upload_time DESC
@@ -112,7 +119,8 @@ async def get_admin_records(
             "file_size": row[6],
             "upload_time": row[7],
             "status": row[8],
-            "error_message": row[9]
+            "error_code": row[9],
+            "error_message": row[10]
         })
 
     return {
@@ -129,6 +137,7 @@ async def export_records(
     search: Optional[str] = Query(None, description="搜索关键词"),
     doc_type: Optional[str] = Query(None, description="单据类型筛选"),
     product_type: Optional[str] = Query(None, description="产品类型筛选"),
+    status: Optional[str] = Query(None, description="状态筛选"),
     start_date: Optional[str] = Query(None, description="开始日期"),
     end_date: Optional[str] = Query(None, description="结束日期")
 ):
@@ -142,8 +151,8 @@ async def export_records(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 构建WHERE条件（只导出成功的记录，且未删除）
-    where_clauses = ["status = 'success'", "deleted_at IS NULL"]
+    # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
+    where_clauses = ["deleted_at IS NULL"]
     params = []
 
     if search:
@@ -159,6 +168,10 @@ async def export_records(
         where_clauses.append("product_type = ?")
         params.append(product_type)
 
+    if status:
+        where_clauses.append("status = ?")
+        params.append(status)
+
     if start_date:
         where_clauses.append("DATE(upload_time) >= ?")
         params.append(start_date)
@@ -169,10 +182,10 @@ async def export_records(
 
     where_sql = " AND ".join(where_clauses)
 
-    # 查询所有匹配记录（包括local_file_path）
+    # 查询所有匹配记录（包括status和local_file_path）
     cursor.execute(f"""
         SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
-               file_size, local_file_path
+               file_size, status, local_file_path
         FROM upload_history
         WHERE {where_sql}
         ORDER BY upload_time DESC
@@ -194,17 +207,17 @@ async def export_records(
             ws = wb.active
             ws.title = "上传记录"
 
-            # 写入表头
-            headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)"]
+            # 写入表头（新增"状态"列）
+            headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态"]
             ws.append(headers)
 
             # 写入数据并收集图片文件
             for row in rows:
-                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, local_file_path = row
-                ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size])
+                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, status, local_file_path = row
+                ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size, status])
 
-                # 添加本地图片文件到ZIP（如果存在）
-                if local_file_path and os.path.exists(local_file_path):
+                # 添加本地图片文件到ZIP（仅成功的记录有本地文件）
+                if status == 'success' and local_file_path and os.path.exists(local_file_path):
                     # 在ZIP中使用相对路径：images/文件名
                     arcname = os.path.join("images", os.path.basename(local_file_path))
                     zipf.write(local_file_path, arcname=arcname)
@@ -241,8 +254,10 @@ async def get_statistics() -> Dict[str, Any]:
     响应格式:
     {
         "total_uploads": 1500,
+        "pending_count": 10,
+        "uploading_count": 5,
         "success_count": 1450,
-        "failed_count": 50,
+        "failed_count": 35,
         "by_doc_type": {
             "销售": 800,
             "转库": 600,
@@ -253,10 +268,12 @@ async def get_statistics() -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 总上传数和成功/失败数（只统计未删除的记录）
+    # 总上传数和各状态数量（只统计未删除的记录）
     cursor.execute("""
         SELECT
             COUNT(*) as total,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN status = 'uploading' THEN 1 ELSE 0 END) as uploading,
             SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
             SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
         FROM upload_history
@@ -264,8 +281,10 @@ async def get_statistics() -> Dict[str, Any]:
     """)
     row = cursor.fetchone()
     total_uploads = row[0]
-    success_count = row[1]
-    failed_count = row[2]
+    pending_count = row[1] or 0
+    uploading_count = row[2] or 0
+    success_count = row[3] or 0
+    failed_count = row[4] or 0
 
     # 按单据类型统计（只统计未删除的记录）
     cursor.execute("""
@@ -283,6 +302,8 @@ async def get_statistics() -> Dict[str, Any]:
 
     return {
         "total_uploads": total_uploads,
+        "pending_count": pending_count,
+        "uploading_count": uploading_count,
         "success_count": success_count,
         "failed_count": failed_count,
         "by_doc_type": by_doc_type

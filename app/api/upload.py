@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
 from typing import List, Optional
 import asyncio
 import os
@@ -68,8 +68,140 @@ def save_file_locally(file_content: bytes, file_path: str) -> None:
         f.write(file_content)
 
 
+async def background_upload_to_yonyou(
+    file_content: bytes,
+    new_filename: str,
+    business_id: str,
+    business_type: str,
+    local_file_path: str,
+    record_id: int
+):
+    """
+    后台任务：上传文件到用友云并更新数据库状态
+
+    Args:
+        file_content: 文件二进制内容
+        new_filename: 新文件名
+        business_id: 业务单据ID
+        business_type: 业务类型
+        local_file_path: 本地文件路径
+        record_id: 数据库记录ID
+    """
+    from app.core.timezone import get_beijing_now_naive
+
+    conn = None
+    try:
+        # 更新状态为 uploading
+        conn = get_db_connection()
+        if not conn:
+            raise Exception("数据库连接失败")
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE upload_history
+            SET status = 'uploading', updated_at = ?
+            WHERE id = ?
+        """, (get_beijing_now_naive().isoformat(), record_id))
+        conn.commit()
+    except Exception as e:
+        print(f"更新uploading状态失败: {str(e)}")
+        if conn:
+            conn.rollback()
+        # 继续执行上传，即使状态更新失败
+    finally:
+        if conn:
+            conn.close()
+
+    conn = None
+    try:
+        # 上传到用友云（保持现有重试机制）
+        yonyou_file_id = None
+        error_code = None
+        error_message = None
+        retry_count = 0
+
+        for attempt in range(settings.MAX_RETRY_COUNT):
+            result = await yonyou_client.upload_file(
+                file_content,
+                new_filename,
+                business_id,
+                retry_count=attempt,  # 修复：传递实际的尝试索引
+                business_type=business_type
+            )
+
+            if result["success"]:
+                yonyou_file_id = result["data"]["id"]
+                retry_count = attempt  # 0=首次成功，1=重试1次后成功
+                break
+            else:
+                error_code = result["error_code"]
+                error_message = result["error_message"]
+                retry_count = attempt + 1  # 修复：失败时记录实际尝试次数
+
+                if attempt < settings.MAX_RETRY_COUNT - 1:
+                    await asyncio.sleep(settings.RETRY_DELAY)
+
+        # 更新最终状态
+        conn = get_db_connection()
+        if not conn:
+            raise Exception("数据库连接失败")
+        cursor = conn.cursor()
+
+        if yonyou_file_id:
+            # 上传成功
+            cursor.execute("""
+                UPDATE upload_history
+                SET status = 'success',
+                    yonyou_file_id = ?,
+                    retry_count = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (yonyou_file_id, retry_count, get_beijing_now_naive().isoformat(), record_id))
+
+            # 保存文件到本地
+            try:
+                save_file_locally(file_content, local_file_path)
+            except Exception as e:
+                print(f"本地文件保存失败: {str(e)}")
+        else:
+            # 上传失败
+            cursor.execute("""
+                UPDATE upload_history
+                SET status = 'failed',
+                    error_code = ?,
+                    error_message = ?,
+                    retry_count = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (error_code, error_message, retry_count, get_beijing_now_naive().isoformat(), record_id))
+
+        conn.commit()
+
+    except Exception as e:
+        # 异常处理：标记为失败
+        print(f"后台上传任务异常: {str(e)}")
+        try:
+            if conn is None:
+                conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE upload_history
+                SET status = 'failed',
+                    error_code = 'BACKGROUND_TASK_ERROR',
+                    error_message = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (str(e), get_beijing_now_naive().isoformat(), record_id))
+            conn.commit()
+        except Exception as inner_e:
+            print(f"更新失败状态时出错: {str(inner_e)}")
+    finally:
+        if conn:
+            conn.close()
+
+
 @router.post("/upload")
 async def upload_files(
+    background_tasks: BackgroundTasks,
     business_id: str = Form(..., description="业务单据ID"),
     doc_number: str = Form(..., description="单据编号"),
     doc_type: str = Form(..., description="单据类型"),
@@ -77,21 +209,36 @@ async def upload_files(
     files: List[UploadFile] = File(...)
 ):
     """
-    批量上传文件到用友云
+    批量上传文件（异步处理）
+
+    流程优化：
+    1. 前端上传文件到后端
+    2. 后端立即保存记录到数据库（状态：pending）
+    3. 立即返回成功响应（< 1秒）
+    4. 后台任务异步上传到用友云
+    5. 上传完成后更新数据库状态（success/failed）
 
     请求参数:
     - business_id: 业务单据ID（纯数字，用于用友云API）
     - doc_number: 单据编号（业务标识，如SO20250103001）
     - doc_type: 单据类型（销售/转库/其他）
+    - product_type: 产品类型（可选）
     - files: 文件列表 (最多10个)
 
     响应格式:
     {
         "success": true,
         "total": 10,
-        "succeeded": 9,
-        "failed": 1,
-        "results": [...]
+        "message": "已接收10个文件，正在后台上传中",
+        "records": [
+            {
+                "id": 123,
+                "file_name": "SO001_20251021_a3f2b1c4.jpg",
+                "original_name": "photo.jpg",
+                "status": "pending",
+                "file_size": 102400
+            }
+        ]
     }
     """
     # 验证businessId格式
@@ -109,14 +256,6 @@ async def upload_files(
     # 获取映射后的businessType
     business_type = DOC_TYPE_TO_BUSINESS_TYPE.get(doc_type, settings.YONYOU_BUSINESS_TYPE)
 
-    # 调试日志：记录未覆盖的doc_type（生产环境可移除）
-    if doc_type not in DOC_TYPE_TO_BUSINESS_TYPE:
-        print(f"[WARNING] doc_type '{doc_type}' 未在映射中，使用默认值: {business_type}")
-
-    # 验证doc_number格式
-    if not doc_number or len(doc_number.strip()) == 0:
-        raise HTTPException(status_code=400, detail="doc_number不能为空")
-
     # 验证文件数量
     if len(files) > settings.MAX_FILES_PER_REQUEST:
         raise HTTPException(status_code=400, detail=f"单次最多上传{settings.MAX_FILES_PER_REQUEST}个文件")
@@ -131,114 +270,92 @@ async def upload_files(
                 detail=f"不支持的文件格式: {file_ext}，支持的格式: {', '.join(settings.ALLOWED_EXTENSIONS)}"
             )
 
-    # 并发上传（限制并发数为3）
-    semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_UPLOADS)
+    # 处理每个文件（快速保存记录，添加后台任务）
+    records = []
+    from app.core.timezone import get_beijing_now_naive
 
-    async def upload_single_file(upload_file: UploadFile):
-        async with semaphore:
-            # 读取文件内容
-            file_content = await upload_file.read()
-            file_size = len(file_content)
+    for upload_file in files:
+        # 读取文件内容
+        file_content = await upload_file.read()
+        file_size = len(file_content)
 
-            # 验证文件大小
-            if file_size > settings.MAX_FILE_SIZE:
-                return {
-                    "file_name": upload_file.filename,
-                    "success": False,
-                    "error_code": "FILE_TOO_LARGE",
-                    "error_message": f"文件大小超过{settings.MAX_FILE_SIZE / 1024 / 1024}MB限制"
-                }
-
-            # 获取文件扩展名
-            file_extension = "." + upload_file.filename.split(".")[-1].lower()
-
-            # 生成基于doc_number的唯一文件名
-            storage_path = settings.LOCAL_STORAGE_PATH
-            new_filename, local_file_path = generate_unique_filename(
-                doc_number, file_extension, storage_path
+        # 验证文件大小
+        if file_size > settings.MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件 {upload_file.filename} 大小超过{settings.MAX_FILE_SIZE / 1024 / 1024}MB限制"
             )
 
-            # 创建上传历史记录
-            history = UploadHistory(
-                business_id=business_id,
-                doc_number=doc_number,
-                doc_type=doc_type,
-                product_type=product_type,
-                file_name=new_filename,  # 使用新文件名
-                file_size=file_size,
-                file_extension=file_extension,
-                local_file_path=local_file_path,
-                status="pending"
-            )
+        # 获取文件扩展名
+        file_extension = "." + upload_file.filename.split(".")[-1].lower()
 
-            # 上传到用友云（使用新文件名）
-            for attempt in range(settings.MAX_RETRY_COUNT):
-                result = await yonyou_client.upload_file(
-                    file_content,
-                    new_filename,  # 上传到用友云时使用新文件名
-                    business_id,
-                    retry_count=0,
-                    business_type=business_type  # 传递映射后的businessType
-                )
+        # 生成唯一文件名
+        storage_path = settings.LOCAL_STORAGE_PATH
+        new_filename, local_file_path = generate_unique_filename(
+            doc_number, file_extension, storage_path
+        )
 
-                if result["success"]:
-                    # 更新历史记录
-                    history.status = "success"
-                    history.yonyou_file_id = result["data"]["id"]
-                    history.retry_count = attempt
+        # 立即保存记录到数据库（状态：pending）
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-                    # 保存文件到本地
-                    try:
-                        save_file_locally(file_content, local_file_path)
-                    except Exception as e:
-                        # 本地保存失败不影响整体流程，仅记录日志
-                        print(f"本地文件保存失败: {str(e)}")
+        beijing_now = get_beijing_now_naive()
+        upload_time_str = beijing_now.isoformat()
 
-                    # 保存到数据库
-                    save_upload_history(history)
+        cursor.execute("""
+            INSERT INTO upload_history
+            (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
+             upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
+             local_file_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            business_id,
+            doc_number,
+            doc_type,
+            product_type,
+            new_filename,
+            file_size,
+            file_extension,
+            upload_time_str,
+            'pending',  # 初始状态
+            None,
+            None,
+            None,
+            0,
+            local_file_path,
+            upload_time_str,
+            upload_time_str
+        ))
 
-                    return {
-                        "file_name": new_filename,
-                        "original_name": upload_file.filename,
-                        "success": True,
-                        "file_id": result["data"]["id"],
-                        "file_size": file_size,
-                        "file_extension": result["data"].get("fileExtension", "")
-                    }
-                else:
-                    if attempt < settings.MAX_RETRY_COUNT - 1:
-                        await asyncio.sleep(settings.RETRY_DELAY)
-                    else:
-                        # 最后一次失败
-                        history.status = "failed"
-                        history.error_code = result["error_code"]
-                        history.error_message = result["error_message"]
-                        history.retry_count = attempt
+        record_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
 
-                        # 保存到数据库
-                        save_upload_history(history)
+        # 添加后台任务
+        background_tasks.add_task(
+            background_upload_to_yonyou,
+            file_content=file_content,
+            new_filename=new_filename,
+            business_id=business_id,
+            business_type=business_type,
+            local_file_path=local_file_path,
+            record_id=record_id
+        )
 
-                        return {
-                            "file_name": new_filename,
-                            "original_name": upload_file.filename,
-                            "success": False,
-                            "error_code": result["error_code"],
-                            "error_message": result["error_message"]
-                        }
+        records.append({
+            "id": record_id,
+            "file_name": new_filename,
+            "original_name": upload_file.filename,
+            "status": "pending",
+            "file_size": file_size
+        })
 
-    # 并发执行上传
-    results = await asyncio.gather(*[upload_single_file(f) for f in files])
-
-    # 统计结果
-    succeeded = sum(1 for r in results if r["success"])
-    failed = len(results) - succeeded
-
+    # 立即返回响应
     return {
         "success": True,
         "total": len(files),
-        "succeeded": succeeded,
-        "failed": failed,
-        "results": results
+        "message": f"已接收{len(files)}个文件，正在后台上传中",
+        "records": records
     }
 
 

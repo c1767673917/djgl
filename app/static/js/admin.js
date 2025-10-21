@@ -8,6 +8,7 @@ const state = {
         search: '',
         docType: '',
         productType: '',
+        status: '',  // 新增：状态筛选
         startDate: '',
         endDate: ''
     },
@@ -31,11 +32,14 @@ const elements = {
     statTotal: document.getElementById('statTotal'),
     statSuccess: document.getElementById('statSuccess'),
     statFailed: document.getElementById('statFailed'),
+    statPending: document.getElementById('statPending'),  // 新增
+    statUploading: document.getElementById('statUploading'),  // 新增
 
     // 筛选
     searchInput: document.getElementById('searchInput'),
     docTypeFilter: document.getElementById('docTypeFilter'),
     productTypeFilter: document.getElementById('productTypeFilter'),
+    statusFilter: document.getElementById('statusFilter'),  // 新增
     startDateInput: document.getElementById('startDateInput'),
     endDateInput: document.getElementById('endDateInput'),
     btnSearch: document.getElementById('btnSearch'),
@@ -107,6 +111,14 @@ async function loadStatistics() {
         elements.statSuccess.textContent = data.success_count;
         elements.statFailed.textContent = data.failed_count;
 
+        // 更新新增的统计项（如果元素存在）
+        if (elements.statPending) {
+            elements.statPending.textContent = data.pending_count || 0;
+        }
+        if (elements.statUploading) {
+            elements.statUploading.textContent = data.uploading_count || 0;
+        }
+
     } catch (error) {
         console.error('加载统计数据失败:', error);
     }
@@ -129,6 +141,7 @@ async function loadRecords() {
         if (state.filters.search) params.append('search', state.filters.search);
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
         if (state.filters.productType) params.append('product_type', state.filters.productType);
+        if (state.filters.status) params.append('status', state.filters.status);  // 新增
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
@@ -182,10 +195,7 @@ function renderTable(records) {
             </td>
             <td>${formatFileSize(record.file_size)}</td>
             <td>
-                <span class="status-badge ${record.status}">
-                    ${record.status === 'success' ? '成功' : '失败'}
-                </span>
-                ${record.error_message ? `<br><small style="color: #e74c3c;">${record.error_message}</small>` : ''}
+                ${renderStatusBadge(record.status, record.error_message)}
             </td>
             <td>
                 <button class="btn-delete-row" data-id="${record.id}">删除</button>
@@ -230,11 +240,32 @@ function goToPage(page) {
     loadRecords();
 }
 
+// 渲染状态徽章
+function renderStatusBadge(status, errorMessage) {
+    const statusConfig = {
+        'success': { icon: '✓', text: '成功', class: 'status-success' },
+        'uploading': { icon: '⏳', text: '上传中', class: 'status-uploading' },
+        'failed': { icon: '✗', text: '失败', class: 'status-failed' },
+        'pending': { icon: '⏸', text: '待上传', class: 'status-pending' }
+    };
+
+    const config = statusConfig[status] || statusConfig['pending'];
+    let html = `<span class="status-badge ${config.class}">${config.icon} ${config.text}</span>`;
+
+    // 失败状态显示错误信息
+    if (status === 'failed' && errorMessage) {
+        html += `<br><small style="color: #e74c3c;" title="${errorMessage}">${errorMessage}</small>`;
+    }
+
+    return html;
+}
+
 // 处理搜索
 function handleSearch() {
     state.filters.search = elements.searchInput.value.trim();
     state.filters.docType = elements.docTypeFilter.value;
     state.filters.productType = elements.productTypeFilter.value;
+    state.filters.status = elements.statusFilter ? elements.statusFilter.value : '';  // 新增
     state.filters.startDate = elements.startDateInput.value;
     state.filters.endDate = elements.endDateInput.value;
 
@@ -247,6 +278,9 @@ function handleReset() {
     elements.searchInput.value = '';
     elements.docTypeFilter.value = '';
     elements.productTypeFilter.value = '';
+    if (elements.statusFilter) {
+        elements.statusFilter.value = '';  // 新增
+    }
     elements.startDateInput.value = '';
     elements.endDateInput.value = '';
 
@@ -254,6 +288,7 @@ function handleReset() {
         search: '',
         docType: '',
         productType: '',
+        status: '',  // 新增
         startDate: '',
         endDate: ''
     };
@@ -271,10 +306,11 @@ async function handleExport() {
         if (state.filters.search) params.append('search', state.filters.search);
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
         if (state.filters.productType) params.append('product_type', state.filters.productType);
+        if (state.filters.status) params.append('status', state.filters.status);  // 新增
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
-        // 下载CSV
+        // 下载ZIP包
         window.location.href = `/api/admin/export?${params}`;
 
         showToast('开始导出...', 'success');
