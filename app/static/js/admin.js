@@ -190,7 +190,7 @@ function renderTable(records) {
             <td>${formatDateTime(record.upload_time)}</td>
             <td>
                 <span class="file-name file-name-clickable" data-filename="${record.file_name}" title="${record.file_name}">
-                    ${record.file_name}
+                    ${truncateFileName(record.file_name)}
                 </span>
             </td>
             <td>${formatFileSize(record.file_size)}</td>
@@ -360,6 +360,13 @@ function formatFileSize(bytes) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+// 截断文件名显示（前17位+省略号）
+function truncateFileName(fileName) {
+    if (!fileName) return '-';
+    if (fileName.length <= 17) return fileName;
+    return fileName.substring(0, 17) + '...';
 }
 
 // 显示Toast
