@@ -3,6 +3,7 @@ import hashlib
 import base64
 import time
 import urllib.parse
+import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import httpx
@@ -38,8 +39,16 @@ class YonYouClient:
 
         return signature
 
-    async def get_access_token(self, force_refresh: bool = False) -> str:
-        """获取access_token，支持缓存"""
+    async def get_access_token(self, force_refresh: bool = False, retry_count: int = 0) -> str:
+        """获取access_token，支持缓存和签名错误重试
+
+        Args:
+            force_refresh: 是否强制刷新token
+            retry_count: 重试次数（内部使用）
+
+        Returns:
+            access_token字符串
+        """
         # 检查缓存
         if not force_refresh and self._token_cache:
             if get_beijing_now() < self._token_cache["expires_at"]:
@@ -72,6 +81,25 @@ class YonYouClient:
 
             return access_token
         else:
+            # 处理签名相关错误，自动重试一次
+            # 签名错误可能的错误码：50000(认证失败)、其他签名相关错误
+            # 错误信息可能包含：签名不正确、signature invalid 等
+            error_code = str(result.get("code", ""))
+            error_message = str(result.get("message", "")).lower()
+
+            # 判断是否为签名相关错误
+            is_signature_error = (
+                error_code == "50000" or
+                "签名" in error_message or
+                "signature" in error_message
+            )
+
+            # 如果是签名错误且未重试过，则重新生成时间戳和签名后重试
+            if is_signature_error and retry_count == 0:
+                # 等待一小段时间后重试（避免时间戳相同）
+                await asyncio.sleep(0.1)
+                return await self.get_access_token(force_refresh=True, retry_count=retry_count + 1)
+
             raise Exception(f"获取Token失败: {result.get('message', '未知错误')}")
 
     async def upload_file(

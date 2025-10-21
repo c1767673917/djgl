@@ -194,6 +194,74 @@ class TestTokenManagement:
             time_diff = abs((expires_at - expected_expires_at).total_seconds())
             assert time_diff < 1
 
+    @pytest.mark.asyncio
+    async def test_get_access_token_signature_error_retry_by_code(
+        self,
+        mock_token_response_signature_error,
+        mock_token_response_success
+    ):
+        """测试签名错误(通过错误码识别)时的重试机制"""
+        client = YonYouClient()
+
+        with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+            # 第一次返回签名错误，第二次成功
+            mock_get.side_effect = [
+                Mock(json=Mock(return_value=mock_token_response_signature_error)),
+                Mock(json=Mock(return_value=mock_token_response_success))
+            ]
+
+            token = await client.get_access_token()
+
+            # 验证重试成功
+            assert token == "test_access_token_12345"
+            # 验证调用了两次API
+            assert mock_get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_access_token_signature_error_retry_by_message(
+        self,
+        mock_token_response_signature_error_message,
+        mock_token_response_success
+    ):
+        """测试签名错误(通过错误信息识别)时的重试机制"""
+        client = YonYouClient()
+
+        with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+            # 第一次返回签名错误，第二次成功
+            mock_get.side_effect = [
+                Mock(json=Mock(return_value=mock_token_response_signature_error_message)),
+                Mock(json=Mock(return_value=mock_token_response_success))
+            ]
+
+            token = await client.get_access_token()
+
+            # 验证重试成功
+            assert token == "test_access_token_12345"
+            # 验证调用了两次API
+            assert mock_get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_access_token_signature_error_retry_limit(
+        self,
+        mock_token_response_signature_error
+    ):
+        """测试签名错误重试次数限制(最多1次重试)"""
+        client = YonYouClient()
+
+        with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+            # 始终返回签名错误
+            mock_response = Mock()
+            mock_response.json.return_value = mock_token_response_signature_error
+            mock_get.return_value = mock_response
+
+            with pytest.raises(Exception) as exc_info:
+                await client.get_access_token()
+
+            # 验证异常信息
+            assert "获取Token失败" in str(exc_info.value)
+            # 验证最多重试1次(共2次调用)
+            assert mock_get.call_count == 2
+
 
 class TestFileUpload:
     """测试文件上传功能"""

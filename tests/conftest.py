@@ -203,6 +203,26 @@ def mock_upload_response_error():
 
 
 @pytest.fixture
+def mock_token_response_signature_error():
+    """Mock签名错误的Token响应"""
+    return {
+        "code": "50000",
+        "message": "签名不正确",
+        "data": None
+    }
+
+
+@pytest.fixture
+def mock_token_response_signature_error_message():
+    """Mock签名错误的Token响应（通过错误信息识别）"""
+    return {
+        "code": "99999",
+        "message": "signature is invalid",
+        "data": None
+    }
+
+
+@pytest.fixture
 def valid_business_ids():
     """有效的businessId列表"""
     return ["123456", "000000", "999999", "100000"]
