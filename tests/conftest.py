@@ -47,7 +47,8 @@ def test_db_path() -> Generator[str, None, None]:
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             deleted_at TEXT DEFAULT NULL,
-            checked INTEGER DEFAULT 0
+            checked INTEGER DEFAULT 0,
+            notes TEXT DEFAULT NULL
         )
     """)
 
@@ -80,6 +81,9 @@ def test_db_path() -> Generator[str, None, None]:
         CREATE INDEX IF NOT EXISTS idx_checked
         ON upload_history(checked)
     """)
+
+    # notes字段暂不添加索引（不用于查询筛选）
+    # 如果未来需要按备注搜索，可添加全文索引
 
     conn.commit()
     conn.close()

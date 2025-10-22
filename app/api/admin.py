@@ -93,10 +93,10 @@ async def get_admin_records(
     total_pages = (total + page_size - 1) // page_size
     offset = (page - 1) * page_size
 
-    # 查询分页数据（包含status、error_code和checked字段）
+    # 查询分页数据（包含status、error_code、checked和notes字段）
     cursor.execute(f"""
         SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
-               upload_time, status, error_code, error_message, checked
+               upload_time, status, error_code, error_message, checked, notes
         FROM upload_history
         WHERE {where_sql}
         ORDER BY upload_time DESC
@@ -121,7 +121,8 @@ async def get_admin_records(
             "status": row[8],
             "error_code": row[9],
             "error_message": row[10],
-            "checked": bool(row[11])  # SQLite INTEGER转Python布尔值
+            "checked": bool(row[11]),  # SQLite INTEGER转Python布尔值
+            "notes": row[12]  # 新增备注字段
         })
 
     return {
@@ -183,10 +184,10 @@ async def export_records(
 
     where_sql = " AND ".join(where_clauses)
 
-    # 查询所有匹配记录（包括status和local_file_path）
+    # 查询所有匹配记录（包括status、local_file_path和notes）
     cursor.execute(f"""
         SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
-               file_size, status, local_file_path
+               file_size, status, local_file_path, notes
         FROM upload_history
         WHERE {where_sql}
         ORDER BY upload_time DESC
@@ -208,14 +209,14 @@ async def export_records(
             ws = wb.active
             ws.title = "上传记录"
 
-            # 写入表头（新增"状态"列）
-            headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态"]
+            # 写入表头（新增"状态"和"备注"列）
+            headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态", "备注"]
             ws.append(headers)
 
             # 写入数据并收集图片文件
             for row in rows:
-                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, status, local_file_path = row
-                ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size, status])
+                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, status, local_file_path, notes = row
+                ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size, status, notes or ''])
 
                 # 添加本地图片文件到ZIP（所有状态的记录，只要文件存在就添加）
                 if local_file_path and os.path.exists(local_file_path):
@@ -450,6 +451,93 @@ async def update_check_status(
             "id": record_id,
             "checked": request.checked,
             "message": "检查状态已更新"
+        }
+
+    except HTTPException:
+        # 重新抛出HTTP异常
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+    finally:
+        conn.close()
+
+
+class UpdateNotesRequest(BaseModel):
+    """更新备注请求模型"""
+    notes: str
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "notes": "这是备注内容"
+            }
+        }
+
+
+@router.patch("/records/{record_id}/notes")
+async def update_notes(
+    record_id: int,
+    request: UpdateNotesRequest
+) -> Dict[str, Any]:
+    """
+    更新记录的备注内容
+
+    路径参数:
+    - record_id: 记录ID
+
+    请求体:
+    {
+        "notes": "备注内容"  // 最大1000字符
+    }
+
+    响应格式:
+    {
+        "success": true,
+        "id": 123,
+        "notes": "备注内容",
+        "message": "备注已更新"
+    }
+
+    错误响应:
+    - 400: 备注内容超过1000字符
+    - 404: 记录不存在或已删除
+    - 500: 服务器内部错误
+    """
+    # 验证备注长度
+    if len(request.notes) > 1000:
+        raise HTTPException(status_code=400, detail="备注内容不能超过1000字符")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 检查记录是否存在(且未被软删除)
+        cursor.execute("""
+            SELECT id FROM upload_history
+            WHERE id = ? AND deleted_at IS NULL
+        """, [record_id])
+
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+
+        # 更新备注内容（空字符串转为NULL）
+        current_time = get_beijing_now_naive().isoformat()
+        notes_value = request.notes.strip() if request.notes.strip() else None
+
+        cursor.execute("""
+            UPDATE upload_history
+            SET notes = ?, updated_at = ?
+            WHERE id = ?
+        """, [notes_value, current_time, record_id])
+
+        conn.commit()
+
+        return {
+            "success": True,
+            "id": record_id,
+            "notes": notes_value,
+            "message": "备注已更新"
         }
 
     except HTTPException:

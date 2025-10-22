@@ -26,6 +26,9 @@ const IMAGE_PREVIEW_CONFIG = {
     LOAD_TIMEOUT_MS: 30000      // 图片加载超时 30秒
 };
 
+// 备注功能防抖定时器存储
+const notesDebounceTimers = new Map();
+
 // DOM元素
 const elements = {
     // 统计
@@ -208,6 +211,16 @@ function renderTable(records) {
                 </button>
                 <button class="btn-delete-row" data-id="${record.id}">删除</button>
             </td>
+            <td>
+                <input
+                    type="text"
+                    class="notes-input"
+                    data-id="${record.id}"
+                    value="${record.notes || ''}"
+                    maxlength="1000"
+                    placeholder=""
+                >
+            </td>
         </tr>
     `).join('');
 
@@ -227,6 +240,12 @@ function renderTable(records) {
     // 绑定检查按钮事件
     document.querySelectorAll('.btn-check').forEach(button => {
         button.addEventListener('click', handleCheckButtonClick);
+    });
+
+    // 绑定备注输入框事件 (失焦自动保存)
+    document.querySelectorAll('.notes-input').forEach(input => {
+        input.addEventListener('blur', handleNotesBlur);
+        input.addEventListener('input', handleNotesInput);
     });
 
     // 更新批量删除按钮状态
@@ -873,6 +892,65 @@ function updateCheckButtonUI(buttonElement, checked) {
         buttonElement.classList.add('unchecked');
         buttonElement.dataset.checked = 'false';
     }
+}
+
+// ==================== 备注功能 ====================
+
+/**
+ * 处理备注输入框失焦事件 - 自动保存（带防抖）
+ */
+async function handleNotesBlur(event) {
+    const input = event.target;
+    const recordId = parseInt(input.dataset.id);
+    const notes = input.value.trim();
+
+    // 清除已有的防抖定时器
+    if (notesDebounceTimers.has(recordId)) {
+        clearTimeout(notesDebounceTimers.get(recordId));
+    }
+
+    // 设置300ms防抖延迟
+    const timer = setTimeout(async () => {
+        // 移除错误状态
+        input.classList.remove('error');
+
+        try {
+            const response = await fetch(`/api/admin/records/${recordId}/notes`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ notes })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || '保存失败');
+            }
+
+            // 保存成功 - 可选：显示成功提示
+            // showToast('备注已保存', 'success');
+
+        } catch (error) {
+            // 保存失败 - 显示错误状态
+            input.classList.add('error');
+            showToast('保存备注失败: ' + error.message, 'error');
+        } finally {
+            // 清理定时器
+            notesDebounceTimers.delete(recordId);
+        }
+    }, 300);
+
+    // 存储定时器
+    notesDebounceTimers.set(recordId, timer);
+}
+
+/**
+ * 处理备注输入框输入事件 - 移除错误状态
+ */
+function handleNotesInput(event) {
+    const input = event.target;
+    input.classList.remove('error');
 }
 
 // 启动应用

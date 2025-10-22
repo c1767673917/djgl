@@ -65,6 +65,10 @@ def init_database():
     if 'checked' not in columns:
         cursor.execute("ALTER TABLE upload_history ADD COLUMN checked INTEGER DEFAULT 0")
 
+    # 添加备注字段 (支持管理员手工填入备注文本)
+    if 'notes' not in columns:
+        cursor.execute("ALTER TABLE upload_history ADD COLUMN notes TEXT DEFAULT NULL")
+
     # 创建索引
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_business_id
