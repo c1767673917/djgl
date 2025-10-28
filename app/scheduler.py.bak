@@ -1,11 +1,14 @@
 """
-定时任务调度器（修复版）
-使用独立的任务函数避免序列化问题
+定时任务调度器
+APScheduler配置
+缓存清理任务
+数据库备份任务
+WebDAV健康检查
 """
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, time
 from typing import Dict, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -16,145 +19,28 @@ from apscheduler.executors.asyncio import AsyncIOExecutor
 from .core.config import get_settings
 from .core.file_manager import FileManager
 from .core.backup_service import BackupService
+from .core.webdav_client import WebDAVClient
 
 logger = logging.getLogger(__name__)
 
-# 全局实例（在模块级别创建，避免序列化问题）
-_file_manager = None
-_backup_service = None
-_settings = None
-
-
-def get_file_manager():
-    """获取文件管理器单例"""
-    global _file_manager
-    if _file_manager is None:
-        _file_manager = FileManager()
-    return _file_manager
-
-
-def get_backup_service():
-    """获取备份服务单例"""
-    global _backup_service
-    if _backup_service is None:
-        _backup_service = BackupService()
-    return _backup_service
-
-
-def get_config():
-    """获取配置单例"""
-    global _settings
-    if _settings is None:
-        _settings = get_settings()
-    return _settings
-
-
-# ========== 独立的任务函数（避免序列化问题）==========
-
-async def webdav_health_check_task():
-    """WebDAV健康检查任务"""
-    try:
-        logger.debug("执行WebDAV健康检查任务")
-        file_manager = get_file_manager()
-        is_healthy = await file_manager.check_webdav_health()
-
-        if is_healthy:
-            logger.debug("WebDAV健康检查通过")
-        else:
-            logger.warning("WebDAV健康检查失败，服务不可用")
-
-    except Exception as e:
-        logger.error(f"WebDAV健康检查任务异常: {str(e)}")
-
-
-async def cleanup_cache_task():
-    """缓存清理任务"""
-    try:
-        logger.info("执行缓存清理任务")
-        file_manager = get_file_manager()
-        result = await file_manager.cleanup_cache()
-
-        if 'error' in result:
-            logger.error(f"缓存清理失败: {result['error']}")
-        else:
-            logger.info(
-                f"缓存清理完成: 删除{result.get('deleted_files', 0)}个文件，"
-                f"释放{result.get('freed_space', 0) / 1024 / 1024:.2f}MB空间"
-            )
-
-    except Exception as e:
-        logger.error(f"缓存清理任务异常: {str(e)}")
-
-
-async def database_backup_task():
-    """数据库备份任务"""
-    try:
-        logger.info("执行数据库备份任务")
-        settings = get_config()
-
-        if not settings.BACKUP_ENABLED:
-            logger.info("备份功能已禁用，跳过备份任务")
-            return
-
-        backup_service = get_backup_service()
-        result = await backup_service.perform_backup()
-
-        if result.get('success'):
-            logger.info(
-                f"备份任务完成: {result.get('backup_filename', 'unknown')} "
-                f"({result.get('file_size', 0)} bytes), "
-                f"上传{'成功' if result.get('uploaded') else '失败'}, "
-                f"清理{result.get('cleaned_count', 0)}个过期文件"
-            )
-        else:
-            logger.error(f"备份任务失败: {result.get('error', '未知错误')}")
-
-    except Exception as e:
-        logger.error(f"数据库备份任务异常: {str(e)}")
-
-
-async def sync_pending_files_task():
-    """待同步文件检查任务"""
-    try:
-        logger.debug("执行待同步文件检查任务")
-        file_manager = get_file_manager()
-
-        # 检查是否有待同步文件
-        pending_count = await file_manager.get_pending_sync_count()
-        if pending_count > 0:
-            logger.info(f"发现{pending_count}个待同步文件，开始同步")
-            result = await file_manager.sync_pending_files()
-
-            if result.get('success'):
-                logger.info(
-                    f"同步完成: 成功{result.get('synced_count', 0)}个，"
-                    f"失败{result.get('failed_count', 0)}个"
-                )
-            else:
-                logger.warning(f"同步失败: {result.get('error', '未知错误')}")
-        else:
-            logger.debug("没有待同步文件")
-
-    except Exception as e:
-        logger.error(f"待同步文件检查任务异常: {str(e)}")
-
-
-# ========== 调度器类 ==========
 
 class TaskScheduler:
     """定时任务调度器"""
 
     def __init__(self):
-        self.settings = get_config()
+        self.settings = get_settings()
+        self.file_manager = FileManager()
+        self.backup_service = BackupService()
+        self.webdav_client = WebDAVClient()
 
-        # 创建调度器（使用内存存储）
+        # 创建调度器（使用内存存储，避免序列化问题）
         executors = {
             'default': AsyncIOExecutor()
         }
         job_defaults = {
-            'coalesce': True,
-            'max_instances': 1,
-            'misfire_grace_time': 30
+            'coalesce': True,  # 合并多个相同的任务
+            'max_instances': 1,  # 最大并发实例数
+            'misfire_grace_time': 30  # 允许的延迟执行时间
         }
 
         self.scheduler = AsyncIOScheduler(
@@ -171,41 +57,45 @@ class TaskScheduler:
 
         # 1. WebDAV健康检查（每60秒）
         self.scheduler.add_job(
-            func=webdav_health_check_task,  # 使用模块级函数
+            func=self._webdav_health_check,
             trigger=IntervalTrigger(seconds=self.settings.HEALTH_CHECK_INTERVAL),
             id='webdav_health_check',
             name='WebDAV健康检查',
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1
         )
         logger.info(f"已设置WebDAV健康检查任务，间隔{self.settings.HEALTH_CHECK_INTERVAL}秒")
 
         # 2. 缓存清理任务（每日凌晨2点）
         self.scheduler.add_job(
-            func=cleanup_cache_task,  # 使用模块级函数
+            func=self._cleanup_cache,
             trigger=CronTrigger(hour=2, minute=0),
             id='cache_cleanup',
             name='缓存清理',
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1
         )
         logger.info("已设置缓存清理任务，每日凌晨2点执行")
 
         # 3. 数据库备份任务（每日凌晨0点）
         self.scheduler.add_job(
-            func=database_backup_task,  # 使用模块级函数
+            func=self._database_backup,
             trigger=CronTrigger(hour=0, minute=0),
             id='database_backup',
             name='数据库备份',
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1
         )
         logger.info("已设置数据库备份任务，每日凌晨0点执行")
 
         # 4. 待同步文件检查（每5分钟）
         self.scheduler.add_job(
-            func=sync_pending_files_task,  # 使用模块级函数
+            func=self._sync_pending_files,
             trigger=IntervalTrigger(seconds=self.settings.SYNC_RETRY_INTERVAL),
             id='sync_pending_files',
             name='待同步文件检查',
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1
         )
         logger.info(f"已设置待同步文件检查任务，间隔{self.settings.SYNC_RETRY_INTERVAL}秒")
 
@@ -219,8 +109,7 @@ class TaskScheduler:
             jobs = self.scheduler.get_jobs()
             logger.info(f"已加载 {len(jobs)} 个定时任务:")
             for job in jobs:
-                next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M:%S') if job.next_run_time else '未设置'
-                logger.info(f"  - {job.id}: {job.name} (下次运行: {next_run})")
+                logger.info(f"  - {job.id}: {job.name} ({job.next_run_time})")
 
         except Exception as e:
             logger.error(f"启动调度器失败: {str(e)}")
@@ -233,6 +122,85 @@ class TaskScheduler:
             logger.info("定时任务调度器已关闭")
         except Exception as e:
             logger.error(f"关闭调度器失败: {str(e)}")
+
+    async def _webdav_health_check(self):
+        """WebDAV健康检查任务"""
+        try:
+            logger.debug("执行WebDAV健康检查任务")
+            is_healthy = await self.file_manager.check_webdav_health()
+
+            if is_healthy:
+                logger.debug("WebDAV健康检查通过")
+            else:
+                logger.warning("WebDAV健康检查失败，服务不可用")
+
+        except Exception as e:
+            logger.error(f"WebDAV健康检查任务异常: {str(e)}")
+
+    async def _cleanup_cache(self):
+        """缓存清理任务"""
+        try:
+            logger.info("执行缓存清理任务")
+            result = await self.file_manager.cleanup_cache()
+
+            if 'error' in result:
+                logger.error(f"缓存清理失败: {result['error']}")
+            else:
+                logger.info(
+                    f"缓存清理完成: 删除{result['deleted_files']}个文件，"
+                    f"释放{result['freed_space'] / 1024 / 1024:.2f}MB空间"
+                )
+
+        except Exception as e:
+            logger.error(f"缓存清理任务异常: {str(e)}")
+
+    async def _database_backup(self):
+        """数据库备份任务"""
+        try:
+            logger.info("执行数据库备份任务")
+
+            if not self.settings.BACKUP_ENABLED:
+                logger.info("备份功能已禁用，跳过备份任务")
+                return
+
+            result = await self.backup_service.perform_backup()
+
+            if result['success']:
+                logger.info(
+                    f"备份任务完成: {result['backup_filename']} "
+                    f"({result['file_size']} bytes), "
+                    f"上传{'成功' if result['uploaded'] else '失败'}, "
+                    f"清理{result['cleaned_count']}个过期文件"
+                )
+            else:
+                logger.error(f"备份任务失败: {result.get('error', '未知错误')}")
+
+        except Exception as e:
+            logger.error(f"数据库备份任务异常: {str(e)}")
+
+    async def _sync_pending_files(self):
+        """待同步文件检查任务"""
+        try:
+            logger.debug("执行待同步文件检查任务")
+
+            # 检查是否有待同步文件
+            pending_count = await self.file_manager.get_pending_sync_count()
+            if pending_count > 0:
+                logger.info(f"发现{pending_count}个待同步文件，开始同步")
+                result = await self.file_manager.sync_pending_files()
+
+                if result['success']:
+                    logger.info(
+                        f"同步完成: 成功{result['synced_count']}个，"
+                        f"失败{result['failed_count']}个"
+                    )
+                else:
+                    logger.warning(f"同步失败: {result.get('error', '未知错误')}")
+            else:
+                logger.debug("没有待同步文件")
+
+        except Exception as e:
+            logger.error(f"待同步文件检查任务异常: {str(e)}")
 
     def get_job_status(self) -> Dict[str, Any]:
         """获取任务状态"""
@@ -266,19 +234,24 @@ class TaskScheduler:
             logger.info(f"手动触发任务: {job_id}")
 
             if job_id == 'cache_cleanup':
-                await cleanup_cache_task()
+                await self._cleanup_cache()
                 return {'success': True, 'message': '缓存清理任务已执行'}
             elif job_id == 'database_backup':
-                await database_backup_task()
+                await self._database_backup()
                 return {'success': True, 'message': '数据库备份任务已执行'}
             elif job_id == 'webdav_health_check':
-                await webdav_health_check_task()
+                await self._webdav_health_check()
                 return {'success': True, 'message': 'WebDAV健康检查任务已执行'}
             elif job_id == 'sync_pending_files':
-                await sync_pending_files_task()
+                await self._sync_pending_files()
                 return {'success': True, 'message': '待同步文件检查任务已执行'}
             else:
-                return {'success': False, 'error': f'未知任务ID: {job_id}'}
+                # 尝试触发调度器中的任务
+                try:
+                    self.scheduler.get_job(job_id).modify(next_run_time=datetime.now())
+                    return {'success': True, 'message': f'任务 {job_id} 已手动触发'}
+                except:
+                    return {'success': False, 'error': f'未知任务ID: {job_id}'}
 
         except Exception as e:
             error_msg = f"手动触发任务失败: {str(e)}"
