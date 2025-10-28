@@ -68,7 +68,7 @@ class WebDAVClient:
         """获取请求头"""
         headers = {
             'Authorization': f'Basic {self.auth_string}',
-            'User-Agent': f'{self.settings.APP_NAME}/{self.settings.APP_VERSION}',
+            'User-Agent': f'UploadManager/{self.settings.APP_VERSION}',
         }
 
         if method:
