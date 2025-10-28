@@ -51,87 +51,86 @@ async def get_admin_records(
         "records": [...]
     }
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
-    where_clauses = ["deleted_at IS NULL"]
-    params = []
+        # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
+        where_clauses = ["deleted_at IS NULL"]
+        params = []
 
-    if search:
-        where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
-        search_pattern = f"%{search}%"
-        params.extend([search_pattern, search_pattern])
+        if search:
+            where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
+            search_pattern = f"%{search}%"
+            params.extend([search_pattern, search_pattern])
 
-    if doc_type:
-        where_clauses.append("doc_type = ?")
-        params.append(doc_type)
+        if doc_type:
+            where_clauses.append("doc_type = ?")
+            params.append(doc_type)
 
-    if product_type:
-        where_clauses.append("product_type = ?")
-        params.append(product_type)
+        if product_type:
+            where_clauses.append("product_type = ?")
+            params.append(product_type)
 
-    if status:
-        where_clauses.append("status = ?")
-        params.append(status)
+        if status:
+            where_clauses.append("status = ?")
+            params.append(status)
 
-    if start_date:
-        where_clauses.append("DATE(upload_time) >= ?")
-        params.append(start_date)
+        if start_date:
+            where_clauses.append("DATE(upload_time) >= ?")
+            params.append(start_date)
 
-    if end_date:
-        where_clauses.append("DATE(upload_time) <= ?")
-        params.append(end_date)
+        if end_date:
+            where_clauses.append("DATE(upload_time) <= ?")
+            params.append(end_date)
 
-    where_sql = " AND ".join(where_clauses)
+        where_sql = " AND ".join(where_clauses)
 
-    # 查询总记录数
-    cursor.execute(f"SELECT COUNT(*) FROM upload_history WHERE {where_sql}", params)
-    total = cursor.fetchone()[0]
+        # 查询总记录数
+        cursor.execute(f"SELECT COUNT(*) FROM upload_history WHERE {where_sql}", params)
+        total = cursor.fetchone()[0]
 
-    # 计算分页
-    total_pages = (total + page_size - 1) // page_size
-    offset = (page - 1) * page_size
+        # 计算分页
+        total_pages = (total + page_size - 1) // page_size
+        offset = (page - 1) * page_size
 
-    # 查询分页数据（包含status、error_code、checked和notes字段）
-    cursor.execute(f"""
-        SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
-               upload_time, status, error_code, error_message, checked, notes
-        FROM upload_history
-        WHERE {where_sql}
-        ORDER BY upload_time DESC
-        LIMIT ? OFFSET ?
-    """, params + [page_size, offset])
+        # 查询分页数据（包含status、error_code、checked和notes字段）
+        cursor.execute(f"""
+            SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
+                   upload_time, status, error_code, error_message, checked, notes
+            FROM upload_history
+            WHERE {where_sql}
+            ORDER BY upload_time DESC
+            LIMIT ? OFFSET ?
+        """, params + [page_size, offset])
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
-    # 转换为字典列表
-    records = []
-    for row in rows:
-        records.append({
-            "id": row[0],
-            "business_id": row[1],
-            "doc_number": row[2],
-            "doc_type": row[3],
-            "product_type": row[4],
-            "file_name": row[5],
-            "file_size": row[6],
-            "upload_time": row[7],
-            "status": row[8],
-            "error_code": row[9],
-            "error_message": row[10],
-            "checked": bool(row[11]),  # SQLite INTEGER转Python布尔值
-            "notes": row[12]  # 新增备注字段
-        })
+        # 转换为字典列表
+        records = []
+        for row in rows:
+            records.append({
+                "id": row[0],
+                "business_id": row[1],
+                "doc_number": row[2],
+                "doc_type": row[3],
+                "product_type": row[4],
+                "file_name": row[5],
+                "file_size": row[6],
+                "upload_time": row[7],
+                "status": row[8],
+                "error_code": row[9],
+                "error_message": row[10],
+                "checked": bool(row[11]),  # SQLite INTEGER转Python布尔值
+                "notes": row[12]  # 新增备注字段
+            })
 
-    return {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-        "records": records
-    }
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "records": records
+        }
 
 
 @router.get("/export")
@@ -150,51 +149,50 @@ async def export_records(
 
     响应: ZIP文件流
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
-    where_clauses = ["deleted_at IS NULL"]
-    params = []
+        # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
+        where_clauses = ["deleted_at IS NULL"]
+        params = []
 
-    if search:
-        where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
-        search_pattern = f"%{search}%"
-        params.extend([search_pattern, search_pattern])
+        if search:
+            where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
+            search_pattern = f"%{search}%"
+            params.extend([search_pattern, search_pattern])
 
-    if doc_type:
-        where_clauses.append("doc_type = ?")
-        params.append(doc_type)
+        if doc_type:
+            where_clauses.append("doc_type = ?")
+            params.append(doc_type)
 
-    if product_type:
-        where_clauses.append("product_type = ?")
-        params.append(product_type)
+        if product_type:
+            where_clauses.append("product_type = ?")
+            params.append(product_type)
 
-    if status:
-        where_clauses.append("status = ?")
-        params.append(status)
+        if status:
+            where_clauses.append("status = ?")
+            params.append(status)
 
-    if start_date:
-        where_clauses.append("DATE(upload_time) >= ?")
-        params.append(start_date)
+        if start_date:
+            where_clauses.append("DATE(upload_time) >= ?")
+            params.append(start_date)
 
-    if end_date:
-        where_clauses.append("DATE(upload_time) <= ?")
-        params.append(end_date)
+        if end_date:
+            where_clauses.append("DATE(upload_time) <= ?")
+            params.append(end_date)
 
-    where_sql = " AND ".join(where_clauses)
+        where_sql = " AND ".join(where_clauses)
 
-    # 查询所有匹配记录（包括status、local_file_path和notes）
-    cursor.execute(f"""
-        SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
-               file_size, status, local_file_path, notes
-        FROM upload_history
-        WHERE {where_sql}
-        ORDER BY upload_time DESC
-    """, params)
+        # 查询所有匹配记录（包括status、local_file_path和notes）
+        cursor.execute(f"""
+            SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
+                   file_size, status, local_file_path, notes
+            FROM upload_history
+            WHERE {where_sql}
+            ORDER BY upload_time DESC
+        """, params)
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     # 创建临时目录和ZIP文件
     temp_dir = tempfile.mkdtemp()
@@ -267,49 +265,47 @@ async def get_statistics() -> Dict[str, Any]:
         }
     }
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    # 总上传数和各状态数量（只统计未删除的记录）
-    cursor.execute("""
-        SELECT
-            COUNT(*) as total,
-            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-            SUM(CASE WHEN status = 'uploading' THEN 1 ELSE 0 END) as uploading,
-            SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
-            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-        FROM upload_history
-        WHERE deleted_at IS NULL
-    """)
-    row = cursor.fetchone()
-    total_uploads = row[0]
-    pending_count = row[1] or 0
-    uploading_count = row[2] or 0
-    success_count = row[3] or 0
-    failed_count = row[4] or 0
+        # 总上传数和各状态数量（只统计未删除的记录）
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'uploading' THEN 1 ELSE 0 END) as uploading,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+            FROM upload_history
+            WHERE deleted_at IS NULL
+        """)
+        row = cursor.fetchone()
+        total_uploads = row[0]
+        pending_count = row[1] or 0
+        uploading_count = row[2] or 0
+        success_count = row[3] or 0
+        failed_count = row[4] or 0
 
-    # 按单据类型统计（只统计未删除的记录）
-    cursor.execute("""
-        SELECT doc_type, COUNT(*) as count
-        FROM upload_history
-        WHERE doc_type IS NOT NULL AND deleted_at IS NULL
-        GROUP BY doc_type
-    """)
+        # 按单据类型统计（只统计未删除的记录）
+        cursor.execute("""
+            SELECT doc_type, COUNT(*) as count
+            FROM upload_history
+            WHERE doc_type IS NOT NULL AND deleted_at IS NULL
+            GROUP BY doc_type
+        """)
 
-    by_doc_type = {}
-    for row in cursor.fetchall():
-        by_doc_type[row[0]] = row[1]
+        by_doc_type = {}
+        for row in cursor.fetchall():
+            by_doc_type[row[0]] = row[1]
 
-    conn.close()
-
-    return {
-        "total_uploads": total_uploads,
-        "pending_count": pending_count,
-        "uploading_count": uploading_count,
-        "success_count": success_count,
-        "failed_count": failed_count,
-        "by_doc_type": by_doc_type
-    }
+        return {
+            "total_uploads": total_uploads,
+            "pending_count": pending_count,
+            "uploading_count": uploading_count,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "by_doc_type": by_doc_type
+        }
 
 
 class DeleteRecordsRequest(BaseModel):
@@ -359,37 +355,34 @@ async def delete_records(request: DeleteRecordsRequest) -> Dict[str, Any]:
     if any(id <= 0 for id in request.ids):
         raise HTTPException(status_code=400, detail="无效的记录ID")
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    try:
-        # 构建IN子句的占位符
-        placeholders = ','.join('?' * len(request.ids))
+        try:
+            # 构建IN子句的占位符
+            placeholders = ','.join('?' * len(request.ids))
 
-        # 软删除：设置deleted_at字段为当前时间（北京时间）
-        current_time = get_beijing_now_naive().isoformat()
-        cursor.execute(f"""
-            UPDATE upload_history
-            SET deleted_at = ?
-            WHERE id IN ({placeholders})
-            AND deleted_at IS NULL
-        """, [current_time] + request.ids)
+            # 软删除：设置deleted_at字段为当前时间（北京时间）
+            current_time = get_beijing_now_naive().isoformat()
+            cursor.execute(f"""
+                UPDATE upload_history
+                SET deleted_at = ?
+                WHERE id IN ({placeholders})
+                AND deleted_at IS NULL
+            """, [current_time] + request.ids)
 
-        deleted_count = cursor.rowcount
-        conn.commit()
+            deleted_count = cursor.rowcount
+            conn.commit()
 
-        return {
-            "success": True,
-            "deleted_count": deleted_count,
-            "message": f"成功删除{deleted_count}条记录"
-        }
+            return {
+                "success": True,
+                "deleted_count": deleted_count,
+                "message": f"成功删除{deleted_count}条记录"
+            }
 
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
-
-    finally:
-        conn.close()
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
 
 @router.patch("/records/{record_id}/check")
@@ -421,46 +414,44 @@ async def update_check_status(
     - 422: 请求参数错误
     - 500: 服务器内部错误
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    try:
-        # 检查记录是否存在(且未被软删除)
-        cursor.execute("""
-            SELECT id FROM upload_history
-            WHERE id = ? AND deleted_at IS NULL
-        """, [record_id])
+        try:
+            # 检查记录是否存在(且未被软删除)
+            cursor.execute("""
+                SELECT id FROM upload_history
+                WHERE id = ? AND deleted_at IS NULL
+            """, [record_id])
 
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="记录不存在或已删除")
 
-        # 更新检查状态(SQLite使用0/1表示布尔值)
-        checked_value = 1 if request.checked else 0
-        current_time = get_beijing_now_naive().isoformat()
+            # 更新检查状态(SQLite使用0/1表示布尔值)
+            checked_value = 1 if request.checked else 0
+            current_time = get_beijing_now_naive().isoformat()
 
-        cursor.execute("""
-            UPDATE upload_history
-            SET checked = ?, updated_at = ?
-            WHERE id = ?
-        """, [checked_value, current_time, record_id])
+            cursor.execute("""
+                UPDATE upload_history
+                SET checked = ?, updated_at = ?
+                WHERE id = ?
+            """, [checked_value, current_time, record_id])
 
-        conn.commit()
+            conn.commit()
 
-        return {
-            "success": True,
-            "id": record_id,
-            "checked": request.checked,
-            "message": "检查状态已更新"
-        }
+            return {
+                "success": True,
+                "id": record_id,
+                "checked": request.checked,
+                "message": "检查状态已更新"
+            }
 
-    except HTTPException:
-        # 重新抛出HTTP异常
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
-    finally:
-        conn.close()
+        except HTTPException:
+            # 重新抛出HTTP异常
+            raise
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
 
 
 class UpdateNotesRequest(BaseModel):
@@ -508,46 +499,44 @@ async def update_notes(
     if len(request.notes) > 1000:
         raise HTTPException(status_code=400, detail="备注内容不能超过1000字符")
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    try:
-        # 检查记录是否存在(且未被软删除)
-        cursor.execute("""
-            SELECT id FROM upload_history
-            WHERE id = ? AND deleted_at IS NULL
-        """, [record_id])
+        try:
+            # 检查记录是否存在(且未被软删除)
+            cursor.execute("""
+                SELECT id FROM upload_history
+                WHERE id = ? AND deleted_at IS NULL
+            """, [record_id])
 
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="记录不存在或已删除")
 
-        # 更新备注内容（空字符串转为NULL）
-        current_time = get_beijing_now_naive().isoformat()
-        notes_value = request.notes.strip() if request.notes.strip() else None
+            # 更新备注内容（空字符串转为NULL）
+            current_time = get_beijing_now_naive().isoformat()
+            notes_value = request.notes.strip() if request.notes.strip() else None
 
-        cursor.execute("""
-            UPDATE upload_history
-            SET notes = ?, updated_at = ?
-            WHERE id = ?
-        """, [notes_value, current_time, record_id])
+            cursor.execute("""
+                UPDATE upload_history
+                SET notes = ?, updated_at = ?
+                WHERE id = ?
+            """, [notes_value, current_time, record_id])
 
-        conn.commit()
+            conn.commit()
 
-        return {
-            "success": True,
-            "id": record_id,
-            "notes": notes_value,
-            "message": "备注已更新"
-        }
+            return {
+                "success": True,
+                "id": record_id,
+                "notes": notes_value,
+                "message": "备注已更新"
+            }
 
-    except HTTPException:
-        # 重新抛出HTTP异常
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
-    finally:
-        conn.close()
+        except HTTPException:
+            # 重新抛出HTTP异常
+            raise
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
 
 
 @router.get("/files/{record_id}/preview")
@@ -565,51 +554,49 @@ async def preview_file(record_id: int):
 
     支持的图片格式: jpg, jpeg, png, gif, bmp, webp
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    try:
-        # 查询文件路径和扩展名
-        cursor.execute("""
-            SELECT local_file_path, file_extension, file_name
-            FROM upload_history
-            WHERE id = ? AND deleted_at IS NULL
-        """, [record_id])
+        try:
+            # 查询文件路径和扩展名
+            cursor.execute("""
+                SELECT local_file_path, file_extension, file_name
+                FROM upload_history
+                WHERE id = ? AND deleted_at IS NULL
+            """, [record_id])
 
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="记录不存在或已删除")
 
-        local_file_path, file_extension, file_name = row
+            local_file_path, file_extension, file_name = row
 
-        # 检查文件是否存在
-        if not local_file_path or not os.path.exists(local_file_path):
-            raise HTTPException(status_code=404, detail="文件不存在")
+            # 检查文件是否存在
+            if not local_file_path or not os.path.exists(local_file_path):
+                raise HTTPException(status_code=404, detail="文件不存在")
 
-        # 根据文件扩展名确定 MIME 类型
-        extension_to_mime = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".gif": "image/gif",
-            ".bmp": "image/bmp",
-            ".webp": "image/webp"
-        }
-        media_type = extension_to_mime.get(file_extension.lower(), "application/octet-stream")
+            # 根据文件扩展名确定 MIME 类型
+            extension_to_mime = {
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png": "image/png",
+                ".gif": "image/gif",
+                ".bmp": "image/bmp",
+                ".webp": "image/webp"
+            }
+            media_type = extension_to_mime.get(file_extension.lower(), "application/octet-stream")
 
-        # 返回文件用于预览（浏览器直接显示）
-        return FileResponse(
-            path=local_file_path,
-            media_type=media_type,
-            filename=file_name
-        )
+            # 返回文件用于预览（浏览器直接显示）
+            return FileResponse(
+                path=local_file_path,
+                media_type=media_type,
+                filename=file_name
+            )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"预览失败: {str(e)}")
-    finally:
-        conn.close()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"预览失败: {str(e)}")
 
 
 @router.get("/files/{record_id}/download")
@@ -625,38 +612,36 @@ async def download_file(record_id: int):
     - 404: 记录不存在、已删除或文件不存在
     - 500: 服务器错误
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    try:
-        # 查询文件路径和文件名
-        cursor.execute("""
-            SELECT local_file_path, file_name
-            FROM upload_history
-            WHERE id = ? AND deleted_at IS NULL
-        """, [record_id])
+        try:
+            # 查询文件路径和文件名
+            cursor.execute("""
+                SELECT local_file_path, file_name
+                FROM upload_history
+                WHERE id = ? AND deleted_at IS NULL
+            """, [record_id])
 
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="记录不存在或已删除")
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="记录不存在或已删除")
 
-        local_file_path, file_name = row
+            local_file_path, file_name = row
 
-        # 检查文件是否存在
-        if not local_file_path or not os.path.exists(local_file_path):
-            raise HTTPException(status_code=404, detail="文件不存在")
+            # 检查文件是否存在
+            if not local_file_path or not os.path.exists(local_file_path):
+                raise HTTPException(status_code=404, detail="文件不存在")
 
-        # 返回文件下载（浏览器触发下载）
-        return FileResponse(
-            path=local_file_path,
-            media_type="application/octet-stream",
-            filename=file_name,
-            headers={"Content-Disposition": f'attachment; filename="{file_name}"'}
-        )
+            # 返回文件下载（浏览器触发下载）
+            return FileResponse(
+                path=local_file_path,
+                media_type="application/octet-stream",
+                filename=file_name,
+                headers={"Content-Disposition": f'attachment; filename="{file_name}"'}
+            )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
-    finally:
-        conn.close()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
