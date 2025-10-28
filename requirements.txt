@@ -7,6 +7,11 @@ pydantic-settings==2.1.0
 python-dotenv==1.0.0
 openpyxl==3.1.2
 
+# WebDAV和定时任务依赖
+apscheduler==3.10.4          # 定时任务调度
+aiofiles==23.2.1             # 异步文件操作
+SQLAlchemy==1.4.53            # APScheduler数据库存储
+
 # 测试依赖
 pytest==7.4.3
 pytest-asyncio==0.21.1

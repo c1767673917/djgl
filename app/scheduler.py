@@ -1,0 +1,292 @@
+"""
+定时任务调度器
+APScheduler配置
+缓存清理任务
+数据库备份任务
+WebDAV健康检查
+"""
+
+import asyncio
+import logging
+from datetime import datetime, time
+from typing import Dict, Any
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.executors.asyncio import AsyncIOExecutor
+
+from .core.config import get_settings
+from .core.file_manager import FileManager
+from .core.backup_service import BackupService
+from .core.webdav_client import WebDAVClient
+
+logger = logging.getLogger(__name__)
+
+
+class TaskScheduler:
+    """定时任务调度器"""
+
+    def __init__(self):
+        self.settings = get_settings()
+        self.file_manager = FileManager()
+        self.backup_service = BackupService()
+        self.webdav_client = WebDAVClient()
+
+        # 创建调度器
+        jobstores = {
+            'default': SQLAlchemyJobStore(url=f'sqlite:///data/scheduler.db')
+        }
+        executors = {
+            'default': AsyncIOExecutor()
+        }
+        job_defaults = {
+            'coalesce': True,  # 合并多个相同的任务
+            'max_instances': 1,  # 最大并发实例数
+            'misfire_grace_time': 30  # 允许的延迟执行时间
+        }
+
+        self.scheduler = AsyncIOScheduler(
+            jobstores=jobstores,
+            executors=executors,
+            job_defaults=job_defaults,
+            timezone='Asia/Shanghai'
+        )
+
+        self._setup_jobs()
+
+    def _setup_jobs(self):
+        """设置定时任务"""
+        logger.info("开始设置定时任务")
+
+        # 1. WebDAV健康检查（每60秒）
+        self.scheduler.add_job(
+            func=self._webdav_health_check,
+            trigger=IntervalTrigger(seconds=self.settings.HEALTH_CHECK_INTERVAL),
+            id='webdav_health_check',
+            name='WebDAV健康检查',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info(f"已设置WebDAV健康检查任务，间隔{self.settings.HEALTH_CHECK_INTERVAL}秒")
+
+        # 2. 缓存清理任务（每日凌晨2点）
+        self.scheduler.add_job(
+            func=self._cleanup_cache,
+            trigger=CronTrigger(hour=2, minute=0),
+            id='cache_cleanup',
+            name='缓存清理',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("已设置缓存清理任务，每日凌晨2点执行")
+
+        # 3. 数据库备份任务（每日凌晨0点）
+        self.scheduler.add_job(
+            func=self._database_backup,
+            trigger=CronTrigger(hour=0, minute=0),
+            id='database_backup',
+            name='数据库备份',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("已设置数据库备份任务，每日凌晨0点执行")
+
+        # 4. 待同步文件检查（每5分钟）
+        self.scheduler.add_job(
+            func=self._sync_pending_files,
+            trigger=IntervalTrigger(seconds=self.settings.SYNC_RETRY_INTERVAL),
+            id='sync_pending_files',
+            name='待同步文件检查',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info(f"已设置待同步文件检查任务，间隔{self.settings.SYNC_RETRY_INTERVAL}秒")
+
+    async def start(self):
+        """启动调度器"""
+        try:
+            self.scheduler.start()
+            logger.info("定时任务调度器已启动")
+
+            # 打印任务信息
+            jobs = self.scheduler.get_jobs()
+            logger.info(f"已加载 {len(jobs)} 个定时任务:")
+            for job in jobs:
+                logger.info(f"  - {job.id}: {job.name} ({job.next_run_time})")
+
+        except Exception as e:
+            logger.error(f"启动调度器失败: {str(e)}")
+            raise
+
+    async def shutdown(self):
+        """关闭调度器"""
+        try:
+            self.scheduler.shutdown(wait=True)
+            logger.info("定时任务调度器已关闭")
+        except Exception as e:
+            logger.error(f"关闭调度器失败: {str(e)}")
+
+    async def _webdav_health_check(self):
+        """WebDAV健康检查任务"""
+        try:
+            logger.debug("执行WebDAV健康检查任务")
+            is_healthy = await self.file_manager.check_webdav_health()
+
+            if is_healthy:
+                logger.debug("WebDAV健康检查通过")
+            else:
+                logger.warning("WebDAV健康检查失败，服务不可用")
+
+        except Exception as e:
+            logger.error(f"WebDAV健康检查任务异常: {str(e)}")
+
+    async def _cleanup_cache(self):
+        """缓存清理任务"""
+        try:
+            logger.info("执行缓存清理任务")
+            result = await self.file_manager.cleanup_cache()
+
+            if 'error' in result:
+                logger.error(f"缓存清理失败: {result['error']}")
+            else:
+                logger.info(
+                    f"缓存清理完成: 删除{result['deleted_files']}个文件，"
+                    f"释放{result['freed_space'] / 1024 / 1024:.2f}MB空间"
+                )
+
+        except Exception as e:
+            logger.error(f"缓存清理任务异常: {str(e)}")
+
+    async def _database_backup(self):
+        """数据库备份任务"""
+        try:
+            logger.info("执行数据库备份任务")
+
+            if not self.settings.BACKUP_ENABLED:
+                logger.info("备份功能已禁用，跳过备份任务")
+                return
+
+            result = await self.backup_service.perform_backup()
+
+            if result['success']:
+                logger.info(
+                    f"备份任务完成: {result['backup_filename']} "
+                    f"({result['file_size']} bytes), "
+                    f"上传{'成功' if result['uploaded'] else '失败'}, "
+                    f"清理{result['cleaned_count']}个过期文件"
+                )
+            else:
+                logger.error(f"备份任务失败: {result.get('error', '未知错误')}")
+
+        except Exception as e:
+            logger.error(f"数据库备份任务异常: {str(e)}")
+
+    async def _sync_pending_files(self):
+        """待同步文件检查任务"""
+        try:
+            logger.debug("执行待同步文件检查任务")
+
+            # 检查是否有待同步文件
+            pending_count = await self.file_manager.get_pending_sync_count()
+            if pending_count > 0:
+                logger.info(f"发现{pending_count}个待同步文件，开始同步")
+                result = await self.file_manager.sync_pending_files()
+
+                if result['success']:
+                    logger.info(
+                        f"同步完成: 成功{result['synced_count']}个，"
+                        f"失败{result['failed_count']}个"
+                    )
+                else:
+                    logger.warning(f"同步失败: {result.get('error', '未知错误')}")
+            else:
+                logger.debug("没有待同步文件")
+
+        except Exception as e:
+            logger.error(f"待同步文件检查任务异常: {str(e)}")
+
+    def get_job_status(self) -> Dict[str, Any]:
+        """获取任务状态"""
+        try:
+            jobs = []
+            for job in self.scheduler.get_jobs():
+                jobs.append({
+                    'id': job.id,
+                    'name': job.name,
+                    'next_run_time': job.next_run_time.isoformat() if job.next_run_time else None,
+                    'trigger': str(job.trigger)
+                })
+
+            return {
+                'scheduler_running': self.scheduler.running,
+                'jobs': jobs,
+                'total_jobs': len(jobs)
+            }
+
+        except Exception as e:
+            logger.error(f"获取任务状态失败: {str(e)}")
+            return {
+                'scheduler_running': False,
+                'jobs': [],
+                'error': str(e)
+            }
+
+    async def trigger_job_manually(self, job_id: str) -> Dict[str, Any]:
+        """手动触发任务"""
+        try:
+            logger.info(f"手动触发任务: {job_id}")
+
+            if job_id == 'cache_cleanup':
+                await self._cleanup_cache()
+                return {'success': True, 'message': '缓存清理任务已执行'}
+            elif job_id == 'database_backup':
+                await self._database_backup()
+                return {'success': True, 'message': '数据库备份任务已执行'}
+            elif job_id == 'webdav_health_check':
+                await self._webdav_health_check()
+                return {'success': True, 'message': 'WebDAV健康检查任务已执行'}
+            elif job_id == 'sync_pending_files':
+                await self._sync_pending_files()
+                return {'success': True, 'message': '待同步文件检查任务已执行'}
+            else:
+                # 尝试触发调度器中的任务
+                try:
+                    self.scheduler.get_job(job_id).modify(next_run_time=datetime.now())
+                    return {'success': True, 'message': f'任务 {job_id} 已手动触发'}
+                except:
+                    return {'success': False, 'error': f'未知任务ID: {job_id}'}
+
+        except Exception as e:
+            error_msg = f"手动触发任务失败: {str(e)}"
+            logger.error(error_msg)
+            return {'success': False, 'error': error_msg}
+
+
+# 全局调度器实例
+scheduler_instance = None
+
+
+async def start_scheduler():
+    """启动全局调度器"""
+    global scheduler_instance
+    if scheduler_instance is None:
+        scheduler_instance = TaskScheduler()
+        await scheduler_instance.start()
+
+
+async def stop_scheduler():
+    """停止全局调度器"""
+    global scheduler_instance
+    if scheduler_instance:
+        await scheduler_instance.shutdown()
+        scheduler_instance = None
+
+
+def get_scheduler() -> TaskScheduler:
+    """获取调度器实例"""
+    global scheduler_instance
+    if scheduler_instance is None:
+        raise Exception("调度器尚未启动")
+    return scheduler_instance

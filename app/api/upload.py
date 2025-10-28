@@ -3,16 +3,18 @@ from typing import List, Optional
 import asyncio
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from app.core.config import get_settings
 from app.core.yonyou_client import YonYouClient
 from app.core.database import get_db_connection
+from app.core.file_manager import FileManager
 from app.models.upload_history import UploadHistory
 
 router = APIRouter()
 settings = get_settings()
 yonyou_client = YonYouClient()
+file_manager = FileManager()
 
 # doc_type到businessType的映射常量
 DOC_TYPE_TO_BUSINESS_TYPE = {
@@ -77,7 +79,7 @@ async def background_upload_to_yonyou(
     record_id: int
 ):
     """
-    后台任务：上传文件到用友云并更新数据库状态
+    后台任务：上传文件到WebDAV + 用友云并更新数据库状态
 
     Args:
         file_content: 文件二进制内容
@@ -90,36 +92,44 @@ async def background_upload_to_yonyou(
     from app.core.timezone import get_beijing_now_naive
 
     conn = None
+    webdav_result = None
+
     try:
-        # 更新状态为 uploading
-        conn = get_db_connection()
-        if not conn:
-            raise Exception("数据库连接失败")
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE upload_history
-            SET status = 'uploading', updated_at = ?
-            WHERE id = ?
-        """, (get_beijing_now_naive().isoformat(), record_id))
-        conn.commit()
+        # 更新状态为 uploading (使用并发安全的数据库连接)
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE upload_history
+                SET status = 'uploading', updated_at = ?
+                WHERE id = ?
+            """, (get_beijing_now_naive().isoformat(), record_id))
+            conn.commit()
     except Exception as e:
         print(f"更新uploading状态失败: {str(e)}")
-        if conn:
-            conn.rollback()
         # 继续执行上传，即使状态更新失败
-    finally:
-        if conn:
-            conn.close()
 
     conn = None
     try:
-        # 先保存文件到本地（无论上传成功与否都保留文件）
+        # 1. 保存到WebDAV + 本地缓存
         try:
-            save_file_locally(file_content, local_file_path)
+            webdav_result = await file_manager.save_file(file_content, new_filename)
+            if webdav_result['success']:
+                print(f"WebDAV保存成功: {webdav_result['webdav_path']}")
+            else:
+                print(f"WebDAV保存失败: {webdav_result.get('error', '未知错误')}")
         except Exception as e:
-            print(f"本地文件保存失败: {str(e)}")
+            print(f"WebDAV保存异常: {str(e)}")
+            webdav_result = {'success': False, 'error': str(e)}
 
-        # 上传到用友云（保持现有重试机制）
+        # 2. 保存到本地作为备份（如果WebDAV失败）
+        if not webdav_result.get('success') and local_file_path:
+            try:
+                save_file_locally(file_content, local_file_path)
+                print(f"本地备份保存成功: {local_file_path}")
+            except Exception as e:
+                print(f"本地备份保存失败: {str(e)}")
+
+        # 3. 上传到用友云（保持现有重试机制）
         yonyou_file_id = None
         error_code = None
         error_message = None
@@ -130,73 +140,120 @@ async def background_upload_to_yonyou(
                 file_content,
                 new_filename,
                 business_id,
-                retry_count=attempt,  # 修复：传递实际的尝试索引
+                retry_count=attempt,
                 business_type=business_type
             )
 
             if result["success"]:
                 yonyou_file_id = result["data"]["id"]
-                retry_count = attempt  # 0=首次成功，1=重试1次后成功
+                retry_count = attempt
                 break
             else:
                 error_code = result["error_code"]
                 error_message = result["error_message"]
-                retry_count = attempt + 1  # 修复：失败时记录实际尝试次数
+                retry_count = attempt + 1
 
                 if attempt < settings.MAX_RETRY_COUNT - 1:
                     await asyncio.sleep(settings.RETRY_DELAY)
 
-        # 更新最终状态
-        conn = get_db_connection()
-        if not conn:
-            raise Exception("数据库连接失败")
-        cursor = conn.cursor()
+        # 4. 更新最终状态 (使用并发安全的数据库连接)
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
 
-        if yonyou_file_id:
-            # 上传成功
-            cursor.execute("""
-                UPDATE upload_history
-                SET status = 'success',
-                    yonyou_file_id = ?,
-                    retry_count = ?,
-                    updated_at = ?
-                WHERE id = ?
-            """, (yonyou_file_id, retry_count, get_beijing_now_naive().isoformat(), record_id))
-        else:
-            # 上传失败（文件已保存到本地）
-            cursor.execute("""
-                UPDATE upload_history
-                SET status = 'failed',
-                    error_code = ?,
-                    error_message = ?,
-                    retry_count = ?,
-                    updated_at = ?
-                WHERE id = ?
-            """, (error_code, error_message, retry_count, get_beijing_now_naive().isoformat(), record_id))
+            # 计算缓存过期时间
+            cache_expiry_time = None
+            if webdav_result.get('success') and webdav_result.get('is_cached'):
+                cache_expiry_time = (get_beijing_now_naive() + timedelta(days=settings.CACHE_DAYS)).isoformat()
 
-        conn.commit()
+            if yonyou_file_id:
+                # 用友云上传成功
+                cursor.execute("""
+                    UPDATE upload_history
+                    SET status = 'success',
+                        yonyou_file_id = ?,
+                        webdav_path = ?,
+                        is_cached = ?,
+                        cache_expiry_time = ?,
+                        retry_count = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (
+                    yonyou_file_id,
+                    webdav_result.get('webdav_path') if webdav_result else None,
+                    webdav_result.get('is_cached', False) if webdav_result else False,
+                    cache_expiry_time,
+                    retry_count,
+                    get_beijing_now_naive().isoformat(),
+                    record_id
+                ))
+            else:
+                # 用友云上传失败
+                cursor.execute("""
+                    UPDATE upload_history
+                    SET status = 'failed',
+                        error_code = ?,
+                        error_message = ?,
+                        webdav_path = ?,
+                        is_cached = ?,
+                        cache_expiry_time = ?,
+                        retry_count = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (
+                    error_code,
+                    error_message,
+                    webdav_result.get('webdav_path') if webdav_result else None,
+                    webdav_result.get('is_cached', False) if webdav_result else False,
+                    cache_expiry_time,
+                    retry_count,
+                    get_beijing_now_naive().isoformat(),
+                    record_id
+                ))
+
+            conn.commit()
+
+            # 5. 如果WebDAV保存成功，插入文件元数据记录
+            if webdav_result and webdav_result.get('success'):
+                try:
+                    cursor.execute("""
+                        INSERT INTO file_metadata
+                        (filename, webdav_path, local_cache_path, upload_time, file_size,
+                         is_cached, last_access_time, webdav_etag, is_synced, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        new_filename,
+                        webdav_result.get('webdav_path'),
+                        webdav_result.get('local_cache_path'),
+                        webdav_result.get('upload_time'),
+                        webdav_result.get('file_size'),
+                        webdav_result.get('is_cached', False),
+                        get_beijing_now_naive().isoformat(),
+                        webdav_result.get('webdav_etag'),
+                        webdav_result.get('is_synced', False),
+                        get_beijing_now_naive().isoformat(),
+                        get_beijing_now_naive().isoformat()
+                    ))
+                    conn.commit()
+                except Exception as e:
+                    print(f"插入文件元数据失败: {str(e)}")
 
     except Exception as e:
-        # 异常处理：标记为失败
+        # 异常处理：标记为失败 (使用并发安全的数据库连接)
         print(f"后台上传任务异常: {str(e)}")
         try:
-            if conn is None:
-                conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE upload_history
-                SET status = 'failed',
-                    error_code = 'BACKGROUND_TASK_ERROR',
-                    error_message = ?,
-                    updated_at = ?
-                WHERE id = ?
-            """, (str(e), get_beijing_now_naive().isoformat(), record_id))
-            conn.commit()
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE upload_history
+                    SET status = 'failed',
+                        error_code = 'BACKGROUND_TASK_ERROR',
+                        error_message = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (str(e), get_beijing_now_naive().isoformat(), record_id))
+                conn.commit()
         except Exception as inner_e:
             print(f"更新失败状态时出错: {str(inner_e)}")
-    finally:
-        if conn:
-            conn.close()
 
 
 @router.post("/upload")
@@ -295,41 +352,40 @@ async def upload_files(
             doc_number, file_extension, storage_path
         )
 
-        # 立即保存记录到数据库（状态：pending）
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # 立即保存记录到数据库（状态：pending，使用并发安全的数据库连接）
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
 
-        beijing_now = get_beijing_now_naive()
-        upload_time_str = beijing_now.isoformat()
+            beijing_now = get_beijing_now_naive()
+            upload_time_str = beijing_now.isoformat()
 
-        cursor.execute("""
-            INSERT INTO upload_history
-            (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
-             upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
-             local_file_path, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            business_id,
-            doc_number,
-            doc_type,
-            product_type,
-            new_filename,
-            file_size,
-            file_extension,
-            upload_time_str,
-            'pending',  # 初始状态
-            None,
-            None,
-            None,
-            0,
-            local_file_path,
-            upload_time_str,
-            upload_time_str
-        ))
+            cursor.execute("""
+                INSERT INTO upload_history
+                (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
+                 upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
+                 local_file_path, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                business_id,
+                doc_number,
+                doc_type,
+                product_type,
+                new_filename,
+                file_size,
+                file_extension,
+                upload_time_str,
+                'pending',  # 初始状态
+                None,
+                None,
+                None,
+                0,
+                local_file_path,
+                upload_time_str,
+                upload_time_str
+            ))
 
-        record_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+            record_id = cursor.lastrowid
+            conn.commit()
 
         # 添加后台任务
         background_tasks.add_task(
@@ -360,40 +416,39 @@ async def upload_files(
 
 
 def save_upload_history(history: UploadHistory):
-    """保存上传历史到数据库"""
+    """保存上传历史到数据库（使用并发安全的数据库连接）"""
     from app.core.timezone import get_beijing_now_naive
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    # 获取北京时间
-    beijing_now = get_beijing_now_naive()
-    upload_time_str = beijing_now.isoformat()
+        # 获取北京时间
+        beijing_now = get_beijing_now_naive()
+        upload_time_str = beijing_now.isoformat()
 
-    cursor.execute("""
-        INSERT INTO upload_history
-        (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
-         upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
-         local_file_path, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        history.business_id,
-        history.doc_number,
-        history.doc_type,
-        history.product_type,
-        history.file_name,
-        history.file_size,
-        history.file_extension,
-        upload_time_str,
-        history.status,
-        history.error_code,
-        history.error_message,
-        history.yonyou_file_id,
-        history.retry_count,
-        history.local_file_path,
-        upload_time_str,
-        upload_time_str
-    ))
+        cursor.execute("""
+            INSERT INTO upload_history
+            (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
+             upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
+             local_file_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            history.business_id,
+            history.doc_number,
+            history.doc_type,
+            history.product_type,
+            history.file_name,
+            history.file_size,
+            history.file_extension,
+            upload_time_str,
+            history.status,
+            history.error_code,
+            history.error_message,
+            history.yonyou_file_id,
+            history.retry_count,
+            history.local_file_path,
+            upload_time_str,
+            upload_time_str
+        ))
 
-    conn.commit()
-    conn.close()
+        conn.commit()

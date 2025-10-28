@@ -102,6 +102,12 @@ function init() {
     // 加载数据
     loadStatistics();
     loadRecords();
+
+    // 初始化WebDAV状态监控
+    initWebDAVStatusMonitoring();
+
+    // 更新迁移统计
+    updateMigrationStats();
 }
 
 // 加载统计数据
@@ -951,6 +957,412 @@ async function handleNotesBlur(event) {
 function handleNotesInput(event) {
     const input = event.target;
     input.classList.remove('error');
+}
+
+// WebDAV和迁移功能
+let webdavStatusInterval = null;
+let currentMigrationId = null;
+let migrationStatusInterval = null;
+
+/**
+ * 初始化WebDAV状态监控
+ */
+function initWebDAVStatusMonitoring() {
+    // 立即检查一次
+    checkWebDAVStatus();
+
+    // 每30秒检查一次WebDAV状态
+    webdavStatusInterval = setInterval(checkWebDAVStatus, 30000);
+
+    // 绑定事件
+    document.getElementById('btnSyncNow').addEventListener('click', syncNow);
+    document.getElementById('btnCheckConnection').addEventListener('click', checkConnection);
+    document.getElementById('btnStartMigration').addEventListener('click', startMigration);
+    document.getElementById('btnDryRunMigration').addEventListener('click', startDryRunMigration);
+    document.getElementById('btnCloseMigrationStatus').addEventListener('click', closeMigrationStatus);
+}
+
+/**
+ * 检查WebDAV状态
+ */
+async function checkWebDAVStatus() {
+    try {
+        const response = await fetch('/api/admin/webdav/status');
+        const data = await response.json();
+
+        if (data.success) {
+            updateWebDAVStatusDisplay(data);
+        }
+    } catch (error) {
+        console.error('检查WebDAV状态失败:', error);
+        updateWebDAVStatusDisplay({
+            webdav_available: false,
+            pending_sync_count: 0,
+            total_cached_files: 0,
+            cache_size_mb: 0
+        });
+    }
+}
+
+/**
+ * 更新WebDAV状态显示
+ */
+function updateWebDAVStatusDisplay(data) {
+    const statusDot = document.getElementById('webdavStatusDot');
+    const statusText = document.getElementById('webdavStatusText');
+    const pendingCount = document.getElementById('pendingSyncCount');
+    const cachedCount = document.getElementById('cachedFilesCount');
+    const cacheSize = document.getElementById('cacheSize');
+
+    // 更新状态指示器
+    statusDot.className = 'status-dot';
+    if (data.webdav_available) {
+        statusDot.classList.add('online');
+        statusText.textContent = 'WebDAV服务正常';
+    } else {
+        statusDot.classList.add('offline');
+        statusText.textContent = 'WebDAV服务不可用';
+    }
+
+    // 更新详细信息
+    pendingCount.textContent = data.pending_sync_count || 0;
+    cachedCount.textContent = data.total_cached_files || 0;
+    cacheSize.textContent = `${(data.cache_size_mb || 0).toFixed(2)} MB`;
+}
+
+/**
+ * 立即同步
+ */
+async function syncNow() {
+    const btn = document.getElementById('btnSyncNow');
+    btn.disabled = true;
+    btn.textContent = '同步中...';
+
+    try {
+        const response = await fetch('/api/admin/webdav/sync', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ force: false })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message || '同步任务已启动', 'success');
+            // 3秒后刷新状态
+            setTimeout(checkWebDAVStatus, 3000);
+        } else {
+            showToast(data.error || '同步失败', 'error');
+        }
+    } catch (error) {
+        console.error('同步失败:', error);
+        showToast('同步失败: ' + error.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '立即同步';
+    }
+}
+
+/**
+ * 检查WebDAV连接
+ */
+async function checkConnection() {
+    const btn = document.getElementById('btnCheckConnection');
+    btn.disabled = true;
+    btn.textContent = '检查中...';
+
+    try {
+        const response = await fetch('/api/admin/webdav/test-connection', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const tests = data.test_results;
+            let message = '连接测试结果:\n';
+            message += `• 连接状态: ${tests.connection ? '✅' : '❌'}\n`;
+            message += `• 身份验证: ${tests.authentication ? '✅' : '❌'}\n`;
+            message += `• 写入权限: ${tests.write_permission ? '✅' : '❌'}\n`;
+            message += `• 读取权限: ${tests.read_permission ? '✅' : '❌'}`;
+
+            showToast(message, tests.connection ? 'success' : 'error');
+        } else {
+            showToast(data.message || '连接测试失败', 'error');
+        }
+    } catch (error) {
+        console.error('连接测试失败:', error);
+        showToast('连接测试失败: ' + error.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '检查连接';
+    }
+}
+
+/**
+ * 更新迁移统计信息
+ */
+async function updateMigrationStats() {
+    try {
+        const response = await fetch('/api/admin/migration/stats');
+        const data = await response.json();
+
+        if (data.success) {
+            const localCount = document.getElementById('localFilesCount');
+            const migratedCount = document.getElementById('migratedFilesCount');
+            const progressFill = document.getElementById('migrationProgressFill');
+            const progressText = document.getElementById('migrationProgressText');
+
+            localCount.textContent = data.local_files.count;
+            migratedCount.textContent = data.migrated_files.count;
+
+            const progress = data.migration_progress || 0;
+            progressFill.style.width = `${progress}%`;
+            progressText.textContent = `${progress.toFixed(1)}%`;
+        }
+    } catch (error) {
+        console.error('获取迁移统计失败:', error);
+    }
+}
+
+/**
+ * 开始迁移
+ */
+async function startMigration() {
+    if (currentMigrationId) {
+        showToast('已有迁移任务在进行中', 'warning');
+        return;
+    }
+
+    if (!confirm('确定要开始迁移所有本地文件到WebDAV吗？这可能需要一些时间。')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/migration/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ dry_run: false })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            currentMigrationId = data.migration_id;
+            showMigrationStatus();
+            startMigrationStatusMonitoring();
+            showToast(`迁移任务已启动，共${data.total_files}个文件`, 'success');
+        } else {
+            showToast(data.error || '启动迁移失败', 'error');
+        }
+    } catch (error) {
+        console.error('启动迁移失败:', error);
+        showToast('启动迁移失败: ' + error.message, 'error');
+    }
+}
+
+/**
+ * 演练模式迁移
+ */
+async function startDryRunMigration() {
+    if (currentMigrationId) {
+        showToast('已有迁移任务在进行中', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/migration/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ dry_run: true })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            currentMigrationId = data.migration_id;
+            showMigrationStatus();
+            startMigrationStatusMonitoring();
+            showToast(`演练模式已启动，共${data.total_files}个文件`, 'info');
+        } else {
+            showToast(data.error || '启动演练失败', 'error');
+        }
+    } catch (error) {
+        console.error('启动演练失败:', error);
+        showToast('启动演练失败: ' + error.message, 'error');
+    }
+}
+
+/**
+ * 显示迁移状态
+ */
+function showMigrationStatus() {
+    const statusDiv = document.getElementById('migrationStatus');
+    statusDiv.style.display = 'block';
+}
+
+/**
+ * 关闭迁移状态
+ */
+function closeMigrationStatus() {
+    const statusDiv = document.getElementById('migrationStatus');
+    statusDiv.style.display = 'none';
+
+    if (migrationStatusInterval) {
+        clearInterval(migrationStatusInterval);
+        migrationStatusInterval = null;
+    }
+
+    currentMigrationId = null;
+}
+
+/**
+ * 开始监控迁移状态
+ */
+function startMigrationStatusMonitoring() {
+    if (migrationStatusInterval) {
+        clearInterval(migrationStatusInterval);
+    }
+
+    migrationStatusInterval = setInterval(() => {
+        checkMigrationStatus();
+    }, 2000); // 每2秒检查一次
+}
+
+/**
+ * 检查迁移状态
+ */
+async function checkMigrationStatus() {
+    if (!currentMigrationId) return;
+
+    try {
+        const response = await fetch(`/api/admin/migration/status/${currentMigrationId}`);
+        const data = await response.json();
+
+        if (data.success) {
+            updateMigrationStatusDisplay(data);
+
+            // 如果迁移完成，停止监控
+            if (data.status === 'completed' || data.status === 'completed_with_errors' || data.status === 'failed') {
+                if (migrationStatusInterval) {
+                    clearInterval(migrationStatusInterval);
+                    migrationStatusInterval = null;
+                }
+
+                // 3秒后自动关闭状态显示
+                setTimeout(() => {
+                    closeMigrationStatus();
+                    // 刷新迁移统计
+                    updateMigrationStats();
+                    // 刷新WebDAV状态
+                    checkWebDAVStatus();
+                }, 3000);
+            }
+        }
+    } catch (error) {
+        console.error('检查迁移状态失败:', error);
+    }
+}
+
+/**
+ * 更新迁移状态显示
+ */
+function updateMigrationStatusDisplay(data) {
+    const statusText = document.getElementById('migrationStatusText');
+    const totalSpan = document.getElementById('migrationTotal');
+    const completedSpan = document.getElementById('migrationCompleted');
+    const failedSpan = document.getElementById('migrationFailed');
+    const progressBar = document.getElementById('migrationProgressBar');
+    const errorsDiv = document.getElementById('migrationErrors');
+
+    // 更新状态文本
+    const statusMap = {
+        'pending': '准备中...',
+        'running': '迁移中...',
+        'completed': '迁移完成',
+        'completed_with_errors': '迁移完成（部分失败）',
+        'failed': '迁移失败'
+    };
+
+    statusText.textContent = statusMap[data.status] || data.status;
+
+    // 更新进度
+    if (data.progress) {
+        totalSpan.textContent = data.progress.total;
+        completedSpan.textContent = data.progress.completed;
+        failedSpan.textContent = data.progress.failed;
+        progressBar.style.width = `${data.progress.percentage}%`;
+    }
+
+    // 显示错误信息
+    if (data.errors && data.errors.length > 0) {
+        errorsDiv.innerHTML = data.errors.map(error =>
+            `<div class="error-item">
+                <strong>${error.filename}:</strong> ${error.error}
+            </div>`
+        ).join('');
+    } else {
+        errorsDiv.innerHTML = '';
+    }
+}
+
+/**
+ * 显示提示消息
+ */
+function showToast(message, type = 'info') {
+    // 创建提示元素
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+
+    // 添加样式
+    Object.assign(toast.style, {
+        position: 'fixed',
+        top: '20px',
+        right: '20px',
+        padding: '12px 20px',
+        borderRadius: '6px',
+        color: 'white',
+        fontWeight: '500',
+        zIndex: '10000',
+        opacity: '0',
+        transform: 'translateY(-20px)',
+        transition: 'all 0.3s ease'
+    });
+
+    // 设置背景色
+    const colors = {
+        success: '#27ae60',
+        error: '#e74c3c',
+        warning: '#f39c12',
+        info: '#3498db'
+    };
+    toast.style.backgroundColor = colors[type] || colors.info;
+
+    document.body.appendChild(toast);
+
+    // 显示动画
+    setTimeout(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+    }, 10);
+
+    // 3秒后移除
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
+    }, 3000);
 }
 
 // 启动应用
