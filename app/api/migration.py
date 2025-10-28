@@ -35,12 +35,20 @@ class MigrationRequest(BaseModel):
     dry_run: bool = False  # 是否为演练模式
 
 
+class MigrationProgress(BaseModel):
+    """迁移进度信息"""
+    total: int
+    completed: int
+    failed: int
+    percentage: float
+
+
 class MigrationStatus(BaseModel):
     """迁移状态响应模型"""
     success: bool
     migration_id: str
     status: str
-    progress: Optional[Dict[str, int]] = None
+    progress: Optional[MigrationProgress] = None
     errors: Optional[List[Dict[str, str]]] = None
     message: Optional[str] = None
 
@@ -64,32 +72,31 @@ def _update_migration_status(migration_id: str, updates: Dict):
 async def _get_local_files_to_migrate() -> List[Dict[str, Any]]:
     """获取需要迁移的本地文件列表"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # 查询已成功上传但未同步到WebDAV的文件
-        cursor.execute("""
-            SELECT id, file_name, local_file_path, upload_time, file_size
-            FROM upload_history
-            WHERE status = 'success'
-            AND local_file_path IS NOT NULL
-            AND (webdav_path IS NULL OR webdav_path = '')
-            ORDER BY upload_time ASC
-        """)
-
         files = []
-        for row in cursor.fetchall():
-            file_path = row[2]
-            if os.path.exists(file_path):
-                files.append({
-                    'id': row[0],
-                    'filename': row[1],
-                    'local_path': file_path,
-                    'upload_time': row[3],
-                    'file_size': row[4]
-                })
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
 
-        conn.close()
+            # 查询已成功上传但未同步到WebDAV的文件
+            cursor.execute("""
+                SELECT id, file_name, local_file_path, upload_time, file_size
+                FROM upload_history
+                WHERE status = 'success'
+                AND local_file_path IS NOT NULL
+                AND (webdav_path IS NULL OR webdav_path = '')
+                ORDER BY upload_time ASC
+            """)
+
+            for row in cursor.fetchall():
+                file_path = row[2]
+                if os.path.exists(file_path):
+                    files.append({
+                        'id': row[0],
+                        'filename': row[1],
+                        'local_path': file_path,
+                        'upload_time': row[3],
+                        'file_size': row[4]
+                    })
+
         return files
 
     except Exception as e:
@@ -167,15 +174,14 @@ async def background_migration_task(
 
                     if upload_result['success']:
                         # 更新数据库记录
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            UPDATE upload_history
-                            SET webdav_path = ?, is_cached = 1, updated_at = ?
-                            WHERE id = ?
-                        """, (webdav_path, datetime.now().isoformat(), file_id))
-                        conn.commit()
-                        conn.close()
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE upload_history
+                                SET webdav_path = ?, is_cached = 1, updated_at = ?
+                                WHERE id = ?
+                            """, (webdav_path, datetime.now().isoformat(), file_id))
+                            conn.commit()
 
                         # 删除本地文件（可选，这里保留本地文件作为备份）
                         # os.remove(local_path)
@@ -416,15 +422,14 @@ async def get_migration_stats():
         local_size = sum(f['file_size'] for f in local_files)
 
         # 获取已迁移文件统计
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT COUNT(*), SUM(file_size)
-            FROM upload_history
-            WHERE status = 'success' AND webdav_path IS NOT NULL AND webdav_path != ''
-        """)
-        migrated_stats = cursor.fetchone()
-        conn.close()
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*), SUM(file_size)
+                FROM upload_history
+                WHERE status = 'success' AND webdav_path IS NOT NULL AND webdav_path != ''
+            """)
+            migrated_stats = cursor.fetchone() or (0, 0)
 
         migrated_count = migrated_stats[0] or 0
         migrated_size = migrated_stats[1] or 0

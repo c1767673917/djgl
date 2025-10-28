@@ -151,6 +151,11 @@ class WebDAVClient:
                 # 如果是我们自定义的WebDAV异常，直接抛出
                 if isinstance(e, (WebDAVAuthenticationError, WebDAVPermissionError, WebDAVNotFoundError)):
                     raise e
+                if isinstance(e, WebDAVError):
+                    status_code = getattr(e, "status_code", None)
+                    if status_code in (405, 409):
+                        # 避免对已存在的目录重复重试
+                        raise e
                 elif "认证失败" in str(e) or "权限不足" in str(e):
                     # 兼容旧的错误消息
                     raise WebDAVAuthenticationError(str(e))
@@ -290,21 +295,25 @@ class WebDAVClient:
             if parent_path and parent_path != '/':
                 await self.create_directory(parent_path)
 
-            # 创建当前目录
-            await self._make_request('MKCOL', path)
+            # 创建当前目录（WebDAV部分服务需要以/结尾）
+            mkcol_path = path if path.endswith('/') else f"{path}/"
+            await self._make_request('MKCOL', mkcol_path)
 
-            logger.debug(f"目录创建成功: {path}")
+            logger.debug(f"目录创建成功: {mkcol_path}")
             return True
 
-        except Exception as e:
-            if "已存在" in str(e) or "405" in str(e):
-                # 目录已存在，认为成功
+        except WebDAVError as e:
+            if e.status_code == 405:
+                # 目录已存在
                 logger.debug(f"目录已存在: {path}")
                 return True
-            else:
-                error_msg = f"目录创建失败: {str(e)}"
-                logger.error(error_msg)
-                return False
+            error_msg = f"目录创建失败: {str(e)}"
+            logger.error(error_msg)
+            return False
+        except Exception as e:
+            error_msg = f"目录创建失败: {str(e)}"
+            logger.error(error_msg)
+            return False
 
     async def list_files(self, path: str = '/') -> List[Dict[str, Any]]:
         """列出目录中的文件"""
