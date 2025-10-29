@@ -198,7 +198,7 @@ function renderTable(records) {
             <td>${record.product_type || ''}</td>
             <td>${formatDateTime(record.upload_time)}</td>
             <td>
-                <span class="file-name file-name-clickable" data-filename="${record.file_name}" title="${record.file_name}">
+                <span class="file-name file-name-clickable" data-record-id="${record.id}" data-filename="${record.file_name}" title="${record.file_name}">
                     ${truncateFileName(record.file_name)}
                 </span>
             </td>
@@ -584,14 +584,15 @@ function handleFileNameClick(event) {
     const fileNameElement = event.target.closest('.file-name-clickable');
     if (!fileNameElement) return;
 
+    const recordId = fileNameElement.dataset.recordId;
     const filename = fileNameElement.dataset.filename;
-    if (filename) {
-        openImagePreview(filename);
+    if (recordId && filename) {
+        openImagePreview(recordId, filename);
     }
 }
 
 // 打开图片预览模态框
-function openImagePreview(filename) {
+function openImagePreview(recordId, filename) {
     // 重置状态
     imagePreviewState.scale = 1;
     imagePreviewState.rotation = 0;
@@ -610,8 +611,8 @@ function openImagePreview(filename) {
     // 更新缩放显示
     updateZoomDisplay();
 
-    // 加载图片（使用URL编码处理特殊字符）
-    const imageUrl = `${IMAGE_PREVIEW_CONFIG.IMAGE_PATH_PREFIX}${encodeURIComponent(filename)}`;
+    // 使用API端点通过record_id获取图片
+    const imageUrl = `/api/admin/files/${recordId}/preview`;
     const img = new Image();
 
     // 添加加载超时处理
@@ -800,7 +801,7 @@ async function handleCheckButtonClick(event) {
  */
 function handleCheckImage(recordId, filename, buttonElement) {
     // 1. 打开图片模态框(复用现有函数)
-    openImagePreview(filename);
+    openImagePreview(recordId, filename);
 
     // 2. 监听模态框关闭事件
     const modal = imagePreviewElements.modal;

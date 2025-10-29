@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.core.database import init_database
+from app.core.database import init_database, verify_database_schema
 from app.core.logging_config import setup_logging
 from app.core.file_manager import FileManager
 from app.api import upload, history, admin, migration, webdav
@@ -67,6 +67,14 @@ async def startup_event():
     # 初始化数据库
     init_database()
     logger.info("数据库初始化完成")
+
+    # 验证数据库Schema
+    try:
+        verify_database_schema()
+    except RuntimeError as e:
+        # Schema验证失败，阻止应用启动
+        logger.critical("应用启动失败 - 数据库Schema不完整")
+        raise
 
     # 验证WebDAV配置
     validation_result = settings.validate_webdav_health()

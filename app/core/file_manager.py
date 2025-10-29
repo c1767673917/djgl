@@ -277,8 +277,20 @@ class FileManager:
             logger.error(f"临时存储保存失败: {str(e)}")
             result['error'] = f"临时存储保存失败: {str(e)}"
 
-    async def get_file(self, webdav_path: str) -> bytes:
-        """获取文件内容（优先从缓存）"""
+    async def get_file(self, webdav_path: str, max_retries: int = 3) -> bytes:
+        """
+        获取文件内容（优先从缓存,支持WebDAV重试）
+
+        Args:
+            webdav_path: WebDAV文件路径
+            max_retries: 最大重试次数,默认3次
+
+        Returns:
+            文件内容(bytes)
+
+        Raises:
+            Exception: 当所有重试都失败时
+        """
         try:
             logger.debug(f"获取文件: {webdav_path}")
 
@@ -293,19 +305,45 @@ class FileManager:
                 os.utime(cache_path)
                 return content
 
-            # 缓存未命中，从WebDAV下载
+            # 缓存未命中，从WebDAV下载（带重试机制）
             logger.debug(f"缓存未命中，从WebDAV下载: {webdav_path}")
-            content = await self.webdav_client.download_file(webdav_path)
 
-            # 检查文件是否应该缓存（7天内的文件）
-            # 这里需要从元数据表获取上传时间，简化处理：所有文件都尝试缓存
-            try:
-                await self._write_cache(cache_path, content)
-                logger.debug(f"文件已缓存: {cache_path}")
-            except Exception as e:
-                logger.warning(f"缓存写入失败: {str(e)}")
+            last_error = None
+            for attempt in range(1, max_retries + 1):
+                try:
+                    content = await self.webdav_client.download_file(webdav_path)
 
-            return content
+                    # 下载成功，尝试写入缓存
+                    try:
+                        await self._write_cache(cache_path, content)
+                        logger.debug(f"文件已缓存: {cache_path}")
+                    except Exception as e:
+                        logger.warning(f"缓存写入失败: {str(e)}")
+
+                    # 如果有重试，记录成功信息
+                    if attempt > 1:
+                        logger.info(f"WebDAV下载成功 (第{attempt}次尝试): {webdav_path}")
+
+                    return content
+
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries:
+                        # 不是最后一次尝试，记录警告并重试
+                        logger.warning(
+                            f"WebDAV下载失败 (第{attempt}/{max_retries}次): {webdav_path} - {str(e)}, "
+                            f"1秒后重试..."
+                        )
+                        await asyncio.sleep(1)  # 等待1秒后重试
+                    else:
+                        # 最后一次尝试也失败了
+                        logger.error(
+                            f"WebDAV下载失败 (已重试{max_retries}次): {webdav_path} - {str(e)}"
+                        )
+
+            # 所有重试都失败
+            error_msg = f"获取文件失败 (已重试{max_retries}次): {str(last_error)}"
+            raise Exception(error_msg)
 
         except Exception as e:
             error_msg = f"获取文件失败: {str(e)}"

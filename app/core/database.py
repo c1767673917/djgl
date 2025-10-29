@@ -150,3 +150,78 @@ def init_database():
         """)
 
         conn.commit()
+
+
+def verify_database_schema():
+    """
+    验证数据库schema是否包含WebDAV支持所需的必需字段
+
+    这个函数会在应用启动时被调用,确保数据库具备正确的表结构。
+    如果缺少必需字段,会抛出RuntimeError并提供修复建议。
+
+    Raises:
+        RuntimeError: 当数据库缺少必需字段时
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # 获取upload_history表的所有列
+            cursor.execute("PRAGMA table_info(upload_history)")
+            columns = {col[1] for col in cursor.fetchall()}
+
+            # 定义必需的WebDAV相关字段
+            required_fields = {
+                'webdav_path': 'WebDAV远程文件路径',
+                'is_cached': '是否已缓存标志',
+                'cache_expiry_time': '缓存过期时间'
+            }
+
+            # 检查缺失的字段
+            missing_fields = [
+                (field, desc)
+                for field, desc in required_fields.items()
+                if field not in columns
+            ]
+
+            if missing_fields:
+                missing_list = '\n'.join([f"  - {field}: {desc}" for field, desc in missing_fields])
+                error_msg = (
+                    f"\n{'='*60}\n"
+                    f"数据库Schema验证失败!\n"
+                    f"{'='*60}\n"
+                    f"upload_history表缺少以下必需字段:\n"
+                    f"{missing_list}\n\n"
+                    f"修复方法:\n"
+                    f"1. 如果有迁移脚本,请执行:\n"
+                    f"   sqlite3 data/uploads.db < migrations/add_webdav_support.sql\n\n"
+                    f"2. 或者手动添加字段:\n"
+                    f"   ALTER TABLE upload_history ADD COLUMN webdav_path TEXT;\n"
+                    f"   ALTER TABLE upload_history ADD COLUMN is_cached BOOLEAN DEFAULT 1;\n"
+                    f"   ALTER TABLE upload_history ADD COLUMN cache_expiry_time DATETIME;\n"
+                    f"{'='*60}\n"
+                )
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+
+            logger.info(f"数据库Schema验证通过 - 所有必需字段都存在 ({len(required_fields)}个)")
+
+            # 统计现有数据
+            cursor.execute("SELECT COUNT(*) FROM upload_history")
+            total_records = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM upload_history WHERE webdav_path IS NOT NULL AND webdav_path != ''")
+            webdav_records = cursor.fetchone()[0]
+
+            logger.info(f"数据库统计: 总记录数={total_records}, WebDAV记录数={webdav_records}")
+
+    except RuntimeError:
+        # 重新抛出schema验证错误
+        raise
+    except Exception as e:
+        error_msg = f"数据库Schema验证过程中出错: {str(e)}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)

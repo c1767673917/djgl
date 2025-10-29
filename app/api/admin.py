@@ -553,14 +553,31 @@ async def preview_file(record_id: int):
     - 500: 服务器错误
 
     支持的图片格式: jpg, jpeg, png, gif, bmp, webp
+
+    文件获取策略:
+    1. 优先从本地文件路径读取(旧数据)
+    2. 如果本地文件不存在,尝试从WebDAV缓存读取(新数据)
+    3. 如果缓存也不存在,从WebDAV下载并缓存
     """
+    import logging
+    import time
+    from app.core.file_manager import FileManager
+    from fastapi.responses import Response
+
+    logger = logging.getLogger(__name__)
+    file_manager = FileManager()
+
+    # 性能监控 - 开始计时
+    start_time = time.time()
+    access_method = "unknown"  # 文件访问方式: local/cache/webdav
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
         try:
             # 查询文件路径和扩展名
             cursor.execute("""
-                SELECT local_file_path, file_extension, file_name
+                SELECT local_file_path, file_extension, file_name, webdav_path
                 FROM upload_history
                 WHERE id = ? AND deleted_at IS NULL
             """, [record_id])
@@ -569,11 +586,7 @@ async def preview_file(record_id: int):
             if not row:
                 raise HTTPException(status_code=404, detail="记录不存在或已删除")
 
-            local_file_path, file_extension, file_name = row
-
-            # 检查文件是否存在
-            if not local_file_path or not os.path.exists(local_file_path):
-                raise HTTPException(status_code=404, detail="文件不存在")
+            local_file_path, file_extension, file_name, webdav_path = row
 
             # 根据文件扩展名确定 MIME 类型
             extension_to_mime = {
@@ -584,18 +597,55 @@ async def preview_file(record_id: int):
                 ".bmp": "image/bmp",
                 ".webp": "image/webp"
             }
-            media_type = extension_to_mime.get(file_extension.lower(), "application/octet-stream")
+            media_type = extension_to_mime.get(file_extension.lower() if file_extension else "", "application/octet-stream")
 
-            # 返回文件用于预览（浏览器直接显示）
-            return FileResponse(
-                path=local_file_path,
-                media_type=media_type,
-                filename=file_name
-            )
+            # 策略1: 优先检查本地文件是否存在
+            if local_file_path and os.path.exists(local_file_path):
+                access_method = "local"
+                elapsed_time = (time.time() - start_time) * 1000  # 转换为毫秒
+                logger.info(f"[性能] 预览文件 record_id={record_id} 方式=本地文件 耗时={elapsed_time:.2f}ms")
+
+                return FileResponse(
+                    path=local_file_path,
+                    media_type=media_type,
+                    filename=file_name
+                )
+
+            # 策略2: 如果有webdav_path,尝试从WebDAV获取
+            if webdav_path:
+                try:
+                    # 检查是否是缓存命中
+                    cache_path = file_manager._get_cache_path(webdav_path)
+                    is_cache_hit = file_manager._is_cache_valid(cache_path)
+                    access_method = "cache" if is_cache_hit else "webdav"
+
+                    # 从WebDAV获取文件(会自动尝试缓存)
+                    file_content = await file_manager.get_file(webdav_path)
+
+                    elapsed_time = (time.time() - start_time) * 1000
+                    logger.info(f"[性能] 预览文件 record_id={record_id} 方式={access_method} 耗时={elapsed_time:.2f}ms")
+
+                    return Response(
+                        content=file_content,
+                        media_type=media_type,
+                        headers={
+                            "Content-Disposition": f'inline; filename="{file_name}"',
+                            "Cache-Control": "public, max-age=3600"
+                        }
+                    )
+                except Exception as e:
+                    # WebDAV获取失败,记录日志但继续尝试其他方式
+                    elapsed_time = (time.time() - start_time) * 1000
+                    logger.warning(f"[性能] 预览文件失败 record_id={record_id} 方式={access_method} 耗时={elapsed_time:.2f}ms 错误={str(e)}")
+
+            # 策略3: 都失败了,返回404
+            raise HTTPException(status_code=404, detail="文件不存在或无法访问")
 
         except HTTPException:
             raise
         except Exception as e:
+            elapsed_time = (time.time() - start_time) * 1000
+            logger.error(f"[性能] 预览失败 record_id={record_id} 耗时={elapsed_time:.2f}ms 错误={str(e)}")
             raise HTTPException(status_code=500, detail=f"预览失败: {str(e)}")
 
 
@@ -611,14 +661,30 @@ async def download_file(record_id: int):
     - 200: 返回文件下载流（触发浏览器下载）
     - 404: 记录不存在、已删除或文件不存在
     - 500: 服务器错误
+
+    文件获取策略:
+    1. 优先从本地文件路径读取(旧数据)
+    2. 如果本地文件不存在,尝试从WebDAV获取(新数据)
     """
+    import logging
+    import time
+    from app.core.file_manager import FileManager
+    from fastapi.responses import Response
+
+    logger = logging.getLogger(__name__)
+    file_manager = FileManager()
+
+    # 性能监控 - 开始计时
+    start_time = time.time()
+    access_method = "unknown"  # 文件访问方式: local/cache/webdav
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
         try:
             # 查询文件路径和文件名
             cursor.execute("""
-                SELECT local_file_path, file_name
+                SELECT local_file_path, file_name, webdav_path
                 FROM upload_history
                 WHERE id = ? AND deleted_at IS NULL
             """, [record_id])
@@ -627,21 +693,53 @@ async def download_file(record_id: int):
             if not row:
                 raise HTTPException(status_code=404, detail="记录不存在或已删除")
 
-            local_file_path, file_name = row
+            local_file_path, file_name, webdav_path = row
 
-            # 检查文件是否存在
-            if not local_file_path or not os.path.exists(local_file_path):
-                raise HTTPException(status_code=404, detail="文件不存在")
+            # 策略1: 优先检查本地文件是否存在
+            if local_file_path and os.path.exists(local_file_path):
+                access_method = "local"
+                elapsed_time = (time.time() - start_time) * 1000  # 转换为毫秒
+                logger.info(f"[性能] 下载文件 record_id={record_id} 方式=本地文件 耗时={elapsed_time:.2f}ms")
 
-            # 返回文件下载（浏览器触发下载）
-            return FileResponse(
-                path=local_file_path,
-                media_type="application/octet-stream",
-                filename=file_name,
-                headers={"Content-Disposition": f'attachment; filename="{file_name}"'}
-            )
+                return FileResponse(
+                    path=local_file_path,
+                    media_type="application/octet-stream",
+                    filename=file_name,
+                    headers={"Content-Disposition": f'attachment; filename="{file_name}"'}
+                )
+
+            # 策略2: 如果有webdav_path,尝试从WebDAV获取
+            if webdav_path:
+                try:
+                    # 检查是否是缓存命中
+                    cache_path = file_manager._get_cache_path(webdav_path)
+                    is_cache_hit = file_manager._is_cache_valid(cache_path)
+                    access_method = "cache" if is_cache_hit else "webdav"
+
+                    # 从WebDAV获取文件
+                    file_content = await file_manager.get_file(webdav_path)
+
+                    elapsed_time = (time.time() - start_time) * 1000
+                    logger.info(f"[性能] 下载文件 record_id={record_id} 方式={access_method} 耗时={elapsed_time:.2f}ms")
+
+                    return Response(
+                        content=file_content,
+                        media_type="application/octet-stream",
+                        headers={
+                            "Content-Disposition": f'attachment; filename="{file_name}"'
+                        }
+                    )
+                except Exception as e:
+                    # WebDAV获取失败,记录日志
+                    elapsed_time = (time.time() - start_time) * 1000
+                    logger.warning(f"[性能] 下载文件失败 record_id={record_id} 方式={access_method} 耗时={elapsed_time:.2f}ms 错误={str(e)}")
+
+            # 策略3: 都失败了,返回404
+            raise HTTPException(status_code=404, detail="文件不存在或无法访问")
 
         except HTTPException:
             raise
         except Exception as e:
+            elapsed_time = (time.time() - start_time) * 1000
+            logger.error(f"[性能] 下载失败 record_id={record_id} 耗时={elapsed_time:.2f}ms 错误={str(e)}")
             raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
