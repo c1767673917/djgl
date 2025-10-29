@@ -8,6 +8,8 @@ WebDAV状态查询
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import logging
+import os
+import tempfile
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -180,33 +182,46 @@ async def detailed_health_check():
                 # 写入测试（创建测试文件）
                 test_content = b"health_check_test"
                 test_path = "/health_check_test.txt"
-                upload_result = await webdav_client.upload_file(
-                    __file__, test_path  # 使用当前文件作为测试文件
-                )
-                if upload_result.get('success'):
-                    health_info["webdav_write"] = True
 
-                    # 读取测试
-                    try:
-                        downloaded_content = await webdav_client.download_file(test_path)
-                        health_info["webdav_read"] = True
+                # 创建临时文件用于上传测试
+                with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
+                    temp_file.write(test_content)
+                    temp_file_path = temp_file.name
 
-                        # 清理测试文件
-                        await webdav_client.delete_file(test_path)
-                    except:
-                        pass
+                try:
+                    upload_result = await webdav_client.upload_file(
+                        temp_file_path, test_path
+                    )
+                    if upload_result.get('success'):
+                        health_info["webdav_write"] = True
+
+                        # 读取测试
+                        try:
+                            downloaded_content = await webdav_client.download_file(test_path)
+                            # 验证下载内容与上传内容一致
+                            if downloaded_content == test_content:
+                                health_info["webdav_read"] = True
+
+                            # 清理测试文件
+                            await webdav_client.delete_file(test_path)
+                        except:
+                            pass
+                finally:
+                    # 清理临时文件
+                    if os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
 
         except Exception as e:
             logger.warning(f"WebDAV健康检查异常: {str(e)}")
 
         # 检查目录
-        import os
         health_info["cache_directory"] = os.path.exists(settings.CACHE_DIR)
         health_info["temp_directory"] = os.path.exists(settings.TEMP_STORAGE_DIR)
 
         # 判断整体状态
-        healthy_checks = sum(health_info.values()) - 1  # 排除overall_status
-        total_checks = len(health_info) - 1
+        # 只统计布尔值检查项,排除字符串类型的overall_status
+        healthy_checks = sum(1 for v in health_info.values() if isinstance(v, bool) and v)
+        total_checks = sum(1 for v in health_info.values() if isinstance(v, bool))
 
         if healthy_checks == total_checks:
             health_info["overall_status"] = "healthy"
@@ -237,7 +252,6 @@ async def get_cache_statistics():
         cache_stats = await file_manager.get_cache_stats()
 
         # 获取缓存使用率
-        import os
         cache_dir = cache_stats.get('cache_dir', settings.CACHE_DIR)
         try:
             stat = os.statvfs(cache_dir)
@@ -396,27 +410,28 @@ async def test_webdav_connection():
                 # 测试写入权限
                 test_file = "/connection_test.txt"
                 test_content = b"test"
-                temp_path = f"/tmp/test_{datetime.now().timestamp()}.txt"
 
-                with open(temp_path, 'wb') as f:
-                    f.write(test_content)
+                # 创建临时文件用于上传测试
+                with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_file:
+                    temp_file.write(test_content)
+                    temp_file_path = temp_file.name
 
-                upload_result = await webdav_client.upload_file(temp_path, test_file)
-                if upload_result.get('success'):
-                    test_results["write_permission"] = True
+                try:
+                    upload_result = await webdav_client.upload_file(temp_file_path, test_file)
+                    if upload_result.get('success'):
+                        test_results["write_permission"] = True
 
-                    # 测试读取权限
-                    downloaded_content = await webdav_client.download_file(test_file)
-                    if downloaded_content == test_content:
-                        test_results["read_permission"] = True
+                        # 测试读取权限
+                        downloaded_content = await webdav_client.download_file(test_file)
+                        if downloaded_content == test_content:
+                            test_results["read_permission"] = True
 
-                    # 清理测试文件
-                    await webdav_client.delete_file(test_file)
-
-                # 清理临时文件
-                import os
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
+                        # 清理测试文件
+                        await webdav_client.delete_file(test_file)
+                finally:
+                    # 清理临时文件
+                    if os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
 
             except Exception as e:
                 logger.warning(f"WebDAV权限测试异常: {str(e)}")

@@ -132,8 +132,9 @@ class FileManager:
             now = datetime.now()
 
             # 如果距离上次检查时间太短，直接返回缓存结果
+            # 使用total_seconds()获取完整时间差(包括天数)
             if (self._last_health_check and
-                (now - self._last_health_check).seconds < self.settings.HEALTH_CHECK_INTERVAL):
+                (now - self._last_health_check).total_seconds() < self.settings.HEALTH_CHECK_INTERVAL):
                 return self._webdav_available
 
             is_healthy = await self.webdav_client.health_check()

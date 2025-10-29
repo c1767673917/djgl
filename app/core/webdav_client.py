@@ -112,7 +112,8 @@ class WebDAVClient:
                     logger.debug(f"WebDAV响应: {response.status_code}")
 
                 # 检查响应状态
-                if response.status_code in [200, 201, 204]:
+                # 207 Multi-Status用于PROPFIND响应
+                if response.status_code in [200, 201, 204, 207]:
                     return response
                 elif response.status_code == 401:
                     raise WebDAVAuthenticationError()
@@ -175,8 +176,27 @@ class WebDAVClient:
         """检查WebDAV服务健康状态"""
         try:
             logger.debug("执行WebDAV健康检查...")
-            response = await self._make_request('HEAD', '/')
-            is_healthy = response.status_code in [200, 204]
+            # 使用PROPFIND方法检查根目录,更兼容各种WebDAV服务器
+            # 许多WebDAV服务器(Nextcloud, Apache mod_dav)不支持根路径的HEAD请求
+            headers = {
+                'Depth': '0',
+                'Content-Type': 'application/xml; charset=utf-8'
+            }
+            propfind_xml = '''<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+    <D:prop>
+        <D:resourcetype/>
+    </D:prop>
+</D:propfind>'''
+
+            response = await self._make_request(
+                'PROPFIND',
+                '/',
+                content=propfind_xml.encode('utf-8'),
+                headers=headers
+            )
+            # PROPFIND成功返回207 Multi-Status
+            is_healthy = response.status_code in [200, 207]
 
             if is_healthy:
                 logger.debug("WebDAV健康检查通过")
