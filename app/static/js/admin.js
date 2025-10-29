@@ -108,6 +108,9 @@ function init() {
 
     // 更新迁移统计
     updateMigrationStats();
+
+    // 初始化折叠功能
+    initCollapsibleCards();
 }
 
 // 加载统计数据
@@ -1364,6 +1367,54 @@ function showToast(message, type = 'info') {
             }
         }, 300);
     }, 3000);
+}
+
+// ==================== 折叠功能 ====================
+
+/**
+ * 初始化折叠卡片功能
+ */
+function initCollapsibleCards() {
+    // WebDAV状态卡片折叠
+    const webdavHeader = document.getElementById('webdavCardHeader');
+    const webdavContent = document.getElementById('webdavCollapsibleContent');
+
+    if (webdavHeader && webdavContent) {
+        webdavHeader.addEventListener('click', () => {
+            toggleCollapsible(webdavContent, webdavHeader.querySelector('.collapse-icon'));
+        });
+    }
+
+    // 文件迁移卡片折叠
+    const migrationHeader = document.getElementById('migrationCardHeader');
+    const migrationContent = document.getElementById('migrationCollapsibleContent');
+
+    if (migrationHeader && migrationContent) {
+        migrationHeader.addEventListener('click', () => {
+            toggleCollapsible(migrationContent, migrationHeader.querySelector('.collapse-icon'));
+        });
+    }
+}
+
+/**
+ * 切换折叠状态
+ * @param {HTMLElement} content - 可折叠内容元素
+ * @param {HTMLElement} icon - 折叠图标元素
+ */
+function toggleCollapsible(content, icon) {
+    if (content.style.display === 'none' || content.style.display === '') {
+        // 展开
+        content.style.display = 'block';
+        if (icon) {
+            icon.textContent = '▲';
+        }
+    } else {
+        // 折叠
+        content.style.display = 'none';
+        if (icon) {
+            icon.textContent = '▼';
+        }
+    }
 }
 
 // 启动应用

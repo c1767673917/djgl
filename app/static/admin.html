@@ -45,76 +45,86 @@
         <!-- WebDAV状态和迁移功能 -->
         <div class="webdav-section">
             <div class="webdav-status-card">
-                <h3>WebDAV状态</h3>
+                <div class="card-header" id="webdavCardHeader" style="cursor: pointer;">
+                    <h3>WebDAV状态</h3>
+                    <span class="collapse-icon">▼</span>
+                </div>
                 <div class="status-indicator" id="webdavStatus">
                     <div class="status-dot" id="webdavStatusDot"></div>
                     <span id="webdavStatusText">检查中...</span>
                 </div>
-                <div class="status-details" id="webdavDetails">
-                    <div class="detail-item">
-                        <span>待同步文件:</span>
-                        <span id="pendingSyncCount">0</span>
+                <div class="collapsible-content" id="webdavCollapsibleContent" style="display: none;">
+                    <div class="status-details" id="webdavDetails">
+                        <div class="detail-item">
+                            <span>待同步文件:</span>
+                            <span id="pendingSyncCount">0</span>
+                        </div>
+                        <div class="detail-item">
+                            <span>缓存文件:</span>
+                            <span id="cachedFilesCount">0</span>
+                        </div>
+                        <div class="detail-item">
+                            <span>缓存大小:</span>
+                            <span id="cacheSize">0 MB</span>
+                        </div>
                     </div>
-                    <div class="detail-item">
-                        <span>缓存文件:</span>
-                        <span id="cachedFilesCount">0</span>
+                    <div class="webdav-actions">
+                        <button class="btn-primary btn-sm" id="btnSyncNow">立即同步</button>
+                        <button class="btn-secondary btn-sm" id="btnCheckConnection">检查连接</button>
                     </div>
-                    <div class="detail-item">
-                        <span>缓存大小:</span>
-                        <span id="cacheSize">0 MB</span>
-                    </div>
-                </div>
-                <div class="webdav-actions">
-                    <button class="btn-primary btn-sm" id="btnSyncNow">立即同步</button>
-                    <button class="btn-secondary btn-sm" id="btnCheckConnection">检查连接</button>
                 </div>
             </div>
 
             <div class="migration-card">
-                <h3>文件迁移</h3>
-                <div class="migration-stats" id="migrationStats">
-                    <div class="stat-item">
-                        <span>本地文件:</span>
-                        <span id="localFilesCount">0</span>
-                    </div>
-                    <div class="stat-item">
-                        <span>已迁移:</span>
-                        <span id="migratedFilesCount">0</span>
-                    </div>
-                    <div class="migration-progress">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="migrationProgressFill" style="width: 0%"></div>
-                        </div>
-                        <span id="migrationProgressText">0%</span>
-                    </div>
+                <div class="card-header" id="migrationCardHeader" style="cursor: pointer;">
+                    <h3>文件迁移</h3>
+                    <span class="collapse-icon">▼</span>
                 </div>
-                <div class="migration-actions">
-                    <button class="btn-primary" id="btnStartMigration">迁移到WebDAV</button>
-                    <button class="btn-secondary btn-sm" id="btnDryRunMigration">演练模式</button>
-                </div>
-                <div class="migration-status" id="migrationStatus" style="display: none;">
-                    <div class="status-header">
-                        <span id="migrationStatusText">准备中...</span>
-                        <button class="btn-close" id="btnCloseMigrationStatus">×</button>
-                    </div>
-                    <div class="progress-details">
-                        <div class="progress-item">
-                            <span>总数:</span>
-                            <span id="migrationTotal">0</span>
+                <div class="collapsible-content" id="migrationCollapsibleContent" style="display: none;">
+                    <div class="migration-stats" id="migrationStats">
+                        <div class="stat-item">
+                            <span>本地文件:</span>
+                            <span id="localFilesCount">0</span>
                         </div>
-                        <div class="progress-item">
-                            <span>已完成:</span>
-                            <span id="migrationCompleted">0</span>
+                        <div class="stat-item">
+                            <span>已迁移:</span>
+                            <span id="migratedFilesCount">0</span>
                         </div>
-                        <div class="progress-item">
-                            <span>失败:</span>
-                            <span id="migrationFailed">0</span>
+                        <div class="migration-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="migrationProgressFill" style="width: 0%"></div>
+                            </div>
+                            <span id="migrationProgressText">0%</span>
                         </div>
                     </div>
-                    <div class="progress-bar-large">
-                        <div class="progress-fill" id="migrationProgressBar" style="width: 0%"></div>
+                    <div class="migration-actions">
+                        <button class="btn-primary" id="btnStartMigration">迁移到WebDAV</button>
+                        <button class="btn-secondary btn-sm" id="btnDryRunMigration">演练模式</button>
                     </div>
-                    <div class="migration-errors" id="migrationErrors"></div>
+                    <div class="migration-status" id="migrationStatus" style="display: none;">
+                        <div class="status-header">
+                            <span id="migrationStatusText">准备中...</span>
+                            <button class="btn-close" id="btnCloseMigrationStatus">×</button>
+                        </div>
+                        <div class="progress-details">
+                            <div class="progress-item">
+                                <span>总数:</span>
+                                <span id="migrationTotal">0</span>
+                            </div>
+                            <div class="progress-item">
+                                <span>已完成:</span>
+                                <span id="migrationCompleted">0</span>
+                            </div>
+                            <div class="progress-item">
+                                <span>失败:</span>
+                                <span id="migrationFailed">0</span>
+                            </div>
+                        </div>
+                        <div class="progress-bar-large">
+                            <div class="progress-fill" id="migrationProgressBar" style="width: 0%"></div>
+                        </div>
+                        <div class="migration-errors" id="migrationErrors"></div>
+                    </div>
                 </div>
             </div>
         </div>

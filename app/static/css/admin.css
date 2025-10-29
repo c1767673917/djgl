@@ -998,3 +998,27 @@ body {
 .btn-secondary:hover {
     background-color: #7f8c8d;
 }
+
+/* 折叠卡片样式 */
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    user-select: none;
+}
+
+.card-header:hover {
+    opacity: 0.8;
+}
+
+.collapse-icon {
+    font-size: 14px;
+    color: #7f8c8d;
+    transition: transform 0.3s ease;
+}
+
+.collapsible-content {
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
