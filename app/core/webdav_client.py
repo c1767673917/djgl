@@ -100,7 +100,10 @@ class WebDAVClient:
                 if self.settings.WEBDAV_DEBUG:
                     logger.debug(f"WebDAV请求 [{attempt + 1}/{self.retry_count + 1}]: {method} {url}")
 
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout,
+                    follow_redirects=True  # allow WebDAV servers that issue redirects
+                ) as client:
                     response = await client.request(
                         method=method,
                         url=url,
