@@ -19,20 +19,20 @@ async def get_upload_history(business_id: str) -> Dict[str, Any]:
         "records": [...]
     }
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    # 使用上下文管理器确保连接正确关闭
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    # 查询记录
-    cursor.execute("""
-        SELECT id, file_name, file_size, file_extension, upload_time,
-               status, error_code, error_message, yonyou_file_id, retry_count
-        FROM upload_history
-        WHERE business_id = ?
-        ORDER BY upload_time DESC
-    """, (business_id,))
+        # 查询记录
+        cursor.execute("""
+            SELECT id, file_name, file_size, file_extension, upload_time,
+                   status, error_code, error_message, yonyou_file_id, retry_count
+            FROM upload_history
+            WHERE business_id = ?
+            ORDER BY upload_time DESC
+        """, (business_id,))
 
-    rows = cursor.fetchall()
-    conn.close()
+        rows = cursor.fetchall()
 
     if not rows:
         return {
