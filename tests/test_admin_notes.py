@@ -10,7 +10,6 @@ import sqlite3
 import tempfile
 import os
 import zipfile
-from datetime import datetime
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from io import BytesIO
@@ -18,6 +17,7 @@ from io import BytesIO
 from app.main import app
 from app.core.database import get_db_connection
 from app.core.config import get_settings
+from app.core.timezone import get_beijing_now_naive_iso
 
 
 # ==================== 测试客户端和数据库fixtures ====================
@@ -55,16 +55,16 @@ def test_db():
             file_name VARCHAR(255) NOT NULL,
             file_size INTEGER NOT NULL,
             file_extension VARCHAR(20),
-            upload_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            upload_time DATETIME,
             status VARCHAR(20) NOT NULL,
             error_code VARCHAR(50),
             error_message TEXT,
             yonyou_file_id VARCHAR(255),
             retry_count INTEGER DEFAULT 0,
             local_file_path VARCHAR(500),
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at TEXT DEFAULT NULL,
+            created_at DATETIME,
+            updated_at DATETIME,
+            deleted_at DATETIME DEFAULT NULL,
             checked INTEGER DEFAULT 0,
             notes TEXT DEFAULT NULL
         )
@@ -133,8 +133,19 @@ def sample_records_with_notes(test_db):
                 business_id, doc_number, doc_type, product_type,
                 file_name, file_size, file_extension,
                 upload_time, status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)
-        """, [business_id, doc_number, doc_type, product_type, file_name, file_size, file_ext, status, notes])
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [
+            business_id,
+            doc_number,
+            doc_type,
+            product_type,
+            file_name,
+            file_size,
+            file_ext,
+            get_beijing_now_naive_iso(),
+            status,
+            notes
+        ])
         record_ids.append(cursor.lastrowid)
 
     conn.commit()
@@ -262,7 +273,7 @@ class TestNotesAPIFunctionality:
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE upload_history SET deleted_at = ? WHERE id = ?",
-            [datetime.now().isoformat(), sample_record]
+            [get_beijing_now_naive_iso(), sample_record]
         )
         conn.commit()
         conn.close()

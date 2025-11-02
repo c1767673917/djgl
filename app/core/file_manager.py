@@ -18,6 +18,11 @@ import logging
 from .config import get_settings
 from .webdav_client import WebDAVClient
 from .database import get_db_connection
+from .timezone import (
+    BEIJING_TZ,
+    get_beijing_now_naive,
+    get_beijing_now_naive_iso,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +81,7 @@ class FileManager:
 
     def _get_temp_path(self, filename: str) -> str:
         """获取临时存储路径"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = get_beijing_now_naive().strftime('%Y%m%d_%H%M%S')
         # 添加时间戳避免文件名冲突
         name, ext = os.path.splitext(filename)
         temp_filename = f"{timestamp}_{name}{ext}"
@@ -84,7 +89,7 @@ class FileManager:
 
     def _generate_webdav_path(self, filename: str) -> str:
         """生成WebDAV文件路径"""
-        now = datetime.now()
+        now = get_beijing_now_naive()
         # 按年/月/日组织文件
         date_path = now.strftime('%Y/%m/%d')
         return f"files/{date_path}/{filename}"
@@ -97,10 +102,10 @@ class FileManager:
         try:
             # 检查文件修改时间
             mtime = os.path.getmtime(cache_path)
-            file_time = datetime.fromtimestamp(mtime)
+            file_time = datetime.fromtimestamp(mtime, tz=BEIJING_TZ).replace(tzinfo=None)
             expiry_time = file_time + timedelta(days=self.settings.CACHE_DAYS)
 
-            return datetime.now() < expiry_time
+            return get_beijing_now_naive() < expiry_time
         except Exception as e:
             logger.error(f"检查缓存有效性失败 {cache_path}: {str(e)}")
             return False
@@ -129,7 +134,7 @@ class FileManager:
     async def check_webdav_health(self) -> bool:
         """检查WebDAV健康状态"""
         try:
-            now = datetime.now()
+            now = get_beijing_now_naive()
 
             # 如果距离上次检查时间太短，直接返回缓存结果
             # 使用total_seconds()获取完整时间差(包括天数)
@@ -168,7 +173,7 @@ class FileManager:
                 'filename': filename,
                 'webdav_path': webdav_path,
                 'file_size': file_size,
-                'upload_time': datetime.now().isoformat(),
+                'upload_time': get_beijing_now_naive_iso(),
                 'success': False,
                 'error': None
             }
@@ -260,7 +265,7 @@ class FileManager:
                 'temp_path': temp_path,
                 'filename': filename,
                 'webdav_path': webdav_path,
-                'created_time': datetime.now().isoformat()
+                'created_time': get_beijing_now_naive_iso()
             })
             self._save_pending_sync(pending_sync)
 
@@ -367,7 +372,7 @@ class FileManager:
                 logger.info("缓存目录不存在，跳过清理")
                 return stats
 
-            expiry_time = datetime.now() - timedelta(days=self.settings.CACHE_DAYS)
+            expiry_time = get_beijing_now_naive() - timedelta(days=self.settings.CACHE_DAYS)
 
             # 遍历缓存目录
             for file_path in cache_dir.rglob('*'):
@@ -474,7 +479,7 @@ class FileManager:
 
             # 更新待同步清单
             pending_sync['files'] = remaining_files
-            pending_sync['last_sync'] = datetime.now().isoformat()
+            pending_sync['last_sync'] = get_beijing_now_naive_iso()
             self._save_pending_sync(pending_sync)
 
             logger.info(f"同步完成: 成功{stats['synced_count']}，失败{stats['failed_count']}")

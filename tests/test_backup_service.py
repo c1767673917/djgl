@@ -3,10 +3,11 @@ import pytest
 import os
 import tempfile
 import tarfile
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from app.core.backup_service import BackupService
 from app.core.exceptions import BackupError
+from app.core.timezone import get_beijing_now
 
 
 @pytest.fixture
@@ -182,14 +183,15 @@ class TestBackupServiceCleanup:
         valid_backup = os.path.join(temp_backup_dir, "backup_20251017_120000.tar.gz")
         with open(valid_backup, 'w') as f:
             f.write("valid backup")
-        valid_time = (datetime.now() - timedelta(days=10)).timestamp()
+        base_now = get_beijing_now()
+        valid_time = (base_now - timedelta(days=10)).timestamp()
         os.utime(valid_backup, (valid_time, valid_time))
 
         # 过期备份（35天前）
         expired_backup = os.path.join(temp_backup_dir, "backup_20250922_120000.tar.gz")
         with open(expired_backup, 'w') as f:
             f.write("expired backup")
-        expired_time = (datetime.now() - timedelta(days=35)).timestamp()
+        expired_time = (base_now - timedelta(days=35)).timestamp()
         os.utime(expired_backup, (expired_time, expired_time))
 
         # 执行清理
@@ -204,7 +206,7 @@ class TestBackupServiceCleanup:
     async def test_cleanup_old_backups_webdav(self, backup_service, mock_webdav_client):
         """测试清理WebDAV上的过期备份"""
         # Mock WebDAV上的备份文件列表
-        current_time = datetime.now()
+        current_time = get_beijing_now()
         mock_files = [
             {
                 "href": "/dav/backups/backup_20251017_120000.tar.gz",  # 10天前，有效
@@ -238,12 +240,15 @@ class TestBackupServiceCleanup:
             (60, False), # 60天前 - 删除
         ]
 
+        reference_now = get_beijing_now()
+
         for days_ago, should_keep in test_cases:
-            filename = f"backup_{(datetime.now() - timedelta(days=days_ago)).strftime('%Y%m%d_%H%M%S')}.tar.gz"
+            target_time = reference_now - timedelta(days=days_ago)
+            filename = f"backup_{target_time.strftime('%Y%m%d_%H%M%S')}.tar.gz"
             filepath = os.path.join(temp_backup_dir, filename)
             with open(filepath, 'w') as f:
                 f.write(f"backup {days_ago} days ago")
-            file_time = (datetime.now() - timedelta(days=days_ago)).timestamp()
+            file_time = target_time.timestamp()
             os.utime(filepath, (file_time, file_time))
 
         # 执行清理
@@ -251,7 +256,8 @@ class TestBackupServiceCleanup:
 
         # 验证保留策略
         for days_ago, should_keep in test_cases:
-            filename = f"backup_{(datetime.now() - timedelta(days=days_ago)).strftime('%Y%m%d_%H%M%S')}.tar.gz"
+            target_time = reference_now - timedelta(days=days_ago)
+            filename = f"backup_{target_time.strftime('%Y%m%d_%H%M%S')}.tar.gz"
             filepath = os.path.join(temp_backup_dir, filename)
             if should_keep:
                 assert os.path.exists(filepath), f"文件应该保留: {days_ago}天前"

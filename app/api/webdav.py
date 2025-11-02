@@ -5,7 +5,6 @@ WebDAV状态查询
 管理接口
 """
 
-from datetime import datetime
 from typing import Dict, List, Optional, Any
 import logging
 import os
@@ -18,6 +17,7 @@ from ..core.config import get_settings
 from ..core.webdav_client import WebDAVClient
 from ..core.file_manager import FileManager
 from ..core.backup_service import BackupService
+from ..core.timezone import get_beijing_now_naive_iso
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ async def get_webdav_status():
         return WebDAVStatusResponse(
             success=True,
             webdav_available=webdav_available,
-            last_check=datetime.now().isoformat(),
+            last_check=get_beijing_now_naive_iso(),
             pending_sync_count=pending_sync_count,
             total_cached_files=cache_stats.get('total_files', 0),
             cache_size_mb=cache_stats.get('total_size_mb', 0.0),
@@ -230,7 +230,7 @@ async def detailed_health_check():
         else:
             health_info["overall_status"] = "unhealthy"
 
-        health_info["check_time"] = datetime.now().isoformat()
+        health_info["check_time"] = get_beijing_now_naive_iso()
         health_info["healthy_checks"] = healthy_checks
         health_info["total_checks"] = total_checks
 

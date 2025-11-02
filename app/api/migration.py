@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from ..core.config import get_settings
 from ..core.webdav_client import WebDAVClient
 from ..core.database import get_db_connection
+from ..core.timezone import get_beijing_now_naive, get_beijing_now_naive_iso
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def _generate_webdav_path(filename: str, upload_time: str) -> str:
         return f"files/{date_path}/{filename}"
     except:
         # 如果时间解析失败，使用当前时间
-        now = datetime.now()
+        now = get_beijing_now_naive()
         date_path = now.strftime('%Y/%m/%d')
         return f"files/{date_path}/{filename}"
 
@@ -127,7 +128,7 @@ async def background_migration_task(
         # 更新状态为运行中
         _update_migration_status(migration_id, {
             'status': 'running',
-            'start_time': datetime.now().isoformat()
+            'start_time': get_beijing_now_naive_iso()
         })
 
         logger.info(f"开始执行迁移任务: {migration_id} (演练模式: {dry_run})")
@@ -180,7 +181,7 @@ async def background_migration_task(
                                 UPDATE upload_history
                                 SET webdav_path = ?, is_cached = 1, updated_at = ?
                                 WHERE id = ?
-                            """, (webdav_path, datetime.now().isoformat(), file_id))
+                            """, (webdav_path, get_beijing_now_naive_iso(), file_id))
                             conn.commit()
 
                         # 删除本地文件（可选，这里保留本地文件作为备份）
@@ -238,7 +239,7 @@ async def background_migration_task(
 
         _update_migration_status(migration_id, {
             'status': final_status,
-            'end_time': datetime.now().isoformat(),
+            'end_time': get_beijing_now_naive_iso(),
             'message': final_message,
             'errors': errors
         })
@@ -251,7 +252,7 @@ async def background_migration_task(
 
         _update_migration_status(migration_id, {
             'status': 'failed',
-            'end_time': datetime.now().isoformat(),
+            'end_time': get_beijing_now_naive_iso(),
             'error': error_msg
         })
 
@@ -294,7 +295,7 @@ async def start_migration(
                 'failed': 0,
                 'percentage': 0.0
             },
-            'created_at': datetime.now().isoformat(),
+            'created_at': get_beijing_now_naive_iso(),
             'dry_run': request.dry_run
         }
 

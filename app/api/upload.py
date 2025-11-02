@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.yonyou_client import YonYouClient
 from app.core.database import get_db_connection
 from app.core.file_manager import FileManager
+from app.core.timezone import get_beijing_now_naive
 from app.models.upload_history import UploadHistory
 
 router = APIRouter()
@@ -42,7 +43,7 @@ def generate_unique_filename(doc_number: str, file_extension: str, storage_path:
         tuple: (新文件名, 完整路径)
     """
     # 获取当前时间戳（精确到秒）
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    timestamp = get_beijing_now_naive().strftime("%Y%m%d%H%M%S")
 
     # 生成8位短UUID（UUID4的前8个字符，已足够避免冲突）
     short_uuid = str(uuid.uuid4()).replace('-', '')[:8]

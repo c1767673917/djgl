@@ -2,10 +2,11 @@
 import pytest
 import os
 import tempfile
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from app.core.file_manager import FileManager
 from app.core.exceptions import WebDAVNetworkError
+from app.core.timezone import get_beijing_now, get_beijing_now_naive_iso
 
 
 @pytest.fixture
@@ -139,7 +140,8 @@ class TestFileManagerDownload:
             f.write(b"cached content")
 
         # 设置文件为7天内（缓存有效）
-        os.utime(cached_file, (datetime.now().timestamp(), datetime.now().timestamp()))
+        current_ts = get_beijing_now().timestamp()
+        os.utime(cached_file, (current_ts, current_ts))
 
         with patch.object(file_manager, 'webdav_client', mock_webdav_client):
             content = await file_manager.download_file("files/test.jpg")
@@ -170,7 +172,7 @@ class TestFileManagerDownload:
             f.write(b"old cached content")
 
         # 设置文件修改时间为8天前
-        old_time = (datetime.now() - timedelta(days=8)).timestamp()
+        old_time = (get_beijing_now() - timedelta(days=8)).timestamp()
         os.utime(cached_file, (old_time, old_time))
 
         mock_webdav_client.download_file.return_value = b"fresh webdav content"
@@ -197,14 +199,14 @@ class TestFileManagerCacheManagement:
         valid_file = os.path.join(cache_path, "valid.jpg")
         with open(valid_file, 'wb') as f:
             f.write(b"valid")
-        valid_time = (datetime.now() - timedelta(days=3)).timestamp()
+        valid_time = (get_beijing_now() - timedelta(days=3)).timestamp()
         os.utime(valid_file, (valid_time, valid_time))
 
         # 过期缓存（8天前）
         expired_file = os.path.join(cache_path, "expired.jpg")
         with open(expired_file, 'wb') as f:
             f.write(b"expired")
-        expired_time = (datetime.now() - timedelta(days=8)).timestamp()
+        expired_time = (get_beijing_now() - timedelta(days=8)).timestamp()
         os.utime(expired_file, (expired_time, expired_time))
 
         # 执行清理
@@ -250,7 +252,7 @@ class TestFileManagerSyncMechanism:
             {
                 "local_path": pending_file,
                 "remote_path": "files/pending_test.jpg",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": get_beijing_now_naive_iso()
             }
         ]
 

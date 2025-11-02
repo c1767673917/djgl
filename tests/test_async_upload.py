@@ -23,6 +23,7 @@ os.environ["YONYOU_APP_SECRET"] = "test_app_secret"
 from app.main import app
 from app.core.database import get_db_connection
 from app.api.upload import background_upload_to_yonyou
+from app.core.timezone import get_beijing_now_naive_iso
 
 
 class TestAsyncUploadFlow:
@@ -144,12 +145,13 @@ class TestBackgroundTaskExecution:
         # 创建pending记录
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -193,12 +195,13 @@ class TestBackgroundTaskExecution:
         # 创建pending记录
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -248,12 +251,13 @@ class TestRetryMechanism:
         # 创建pending记录
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -309,12 +313,13 @@ class TestRetryMechanism:
         # 创建pending记录
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -360,12 +365,13 @@ class TestRetryMechanism:
         # 测试场景：第2次重试成功 (总共3次尝试)
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -412,12 +418,13 @@ class TestErrorHandling:
         # 创建记录
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -446,12 +453,13 @@ class TestErrorHandling:
 
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -571,12 +579,13 @@ class TestStatusTransition:
         # 创建pending记录
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
 
@@ -616,12 +625,13 @@ class TestStatusTransition:
         # 创建pending记录
         conn = get_db_connection()
         cursor = conn.cursor()
+        now_iso = get_beijing_now_naive_iso()
         cursor.execute("""
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, file_name, file_size, file_extension,
              upload_time, status, retry_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, datetime('now'), datetime('now'))
-        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", "pending", 0))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("123456", "SO001", "销售", "test.jpg", len(test_image_bytes), ".jpg", now_iso, "pending", 0, now_iso, now_iso))
         record_id = cursor.lastrowid
         conn.commit()
         conn.close()

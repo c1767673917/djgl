@@ -6,9 +6,11 @@
 import logging
 import re
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from functools import wraps
+
+from .timezone import BEIJING_TZ
 
 
 class SensitiveDataFilter(logging.Filter):
@@ -78,7 +80,7 @@ class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """格式化日志记录为JSON格式"""
         log_data = {
-            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=BEIJING_TZ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -128,7 +130,7 @@ class ColoredFormatter(logging.Formatter):
         reset = self.COLORS['RESET']
 
         # 基础格式
-        timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.fromtimestamp(record.created, tz=BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
         formatted = (
             f"{color}[{timestamp}] "
@@ -142,6 +144,16 @@ class ColoredFormatter(logging.Formatter):
             formatted += f"\n{self.formatException(record.exc_info)}"
 
         return formatted
+
+
+class BeijingTimeFormatter(logging.Formatter):
+    """带北京时间的文件日志格式化器"""
+
+    def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
+        dt = datetime.fromtimestamp(record.created, tz=BEIJING_TZ)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
 
 
 def setup_logging(
@@ -194,9 +206,7 @@ def setup_logging(
         if structured:
             file_formatter = StructuredFormatter(include_extra=True)
         else:
-            file_formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
+            file_formatter = BeijingTimeFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
         file_handler.setFormatter(file_formatter)
         if sensitive_filter:

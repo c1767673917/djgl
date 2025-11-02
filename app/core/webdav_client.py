@@ -10,7 +10,6 @@ import base64
 import xml.etree.ElementTree as ET
 from urllib.parse import quote, unquote
 from typing import Dict, List, Optional, Any, Callable
-from datetime import datetime
 import logging
 
 import httpx
@@ -21,6 +20,7 @@ from .exceptions import (
     WebDAVServerError
 )
 from .logging_config import log_async_function_call, get_logger
+from .timezone import get_beijing_now_naive_iso
 
 logger = get_logger(__name__)
 
@@ -251,7 +251,7 @@ class WebDAVClient:
                 'webdav_path': webdav_path,
                 'file_size': file_size,
                 'etag': etag,
-                'upload_time': datetime.now().isoformat()
+                'upload_time': get_beijing_now_naive_iso()
             }
 
             logger.info(f"文件上传成功: {webdav_path}")

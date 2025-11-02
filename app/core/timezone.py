@@ -39,6 +39,26 @@ def get_beijing_now_naive() -> datetime:
     return datetime.now(BEIJING_TZ).replace(tzinfo=None)
 
 
+def get_beijing_now_iso() -> str:
+    """
+    获取当前北京时间的ISO格式字符串（带时区信息）
+
+    Returns:
+        str: 格式如 '2025-10-15T14:30:45+08:00'
+    """
+    return get_beijing_now().isoformat()
+
+
+def get_beijing_now_naive_iso() -> str:
+    """
+    获取当前北京时间的ISO格式字符串（无时区信息）
+
+    Returns:
+        str: 格式如 '2025-10-15T14:30:45'
+    """
+    return get_beijing_now_naive().isoformat()
+
+
 def format_beijing_time(dt: datetime) -> str:
     """
     将 datetime 对象格式化为标准字符串（用于 API 响应）

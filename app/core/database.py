@@ -69,7 +69,8 @@ def init_database():
                 retry_count INTEGER DEFAULT 0,
                 local_file_path VARCHAR(500),
                 created_at DATETIME,
-                updated_at DATETIME
+                updated_at DATETIME,
+                deleted_at DATETIME
             )
         """)
 
@@ -87,7 +88,7 @@ def init_database():
             cursor.execute("ALTER TABLE upload_history ADD COLUMN local_file_path VARCHAR(500)")
 
         if 'deleted_at' not in columns:
-            cursor.execute("ALTER TABLE upload_history ADD COLUMN deleted_at TEXT DEFAULT NULL")
+            cursor.execute("ALTER TABLE upload_history ADD COLUMN deleted_at DATETIME DEFAULT NULL")
 
         # 添加产品类型字段 (支持产品维度分类管理)
         if 'product_type' not in columns:

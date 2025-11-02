@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS file_metadata (
     last_access_time DATETIME,
     webdav_etag TEXT,
     is_synced BOOLEAN DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
 );
 
 -- 2. 创建索引
@@ -36,18 +36,20 @@ CREATE TABLE IF NOT EXISTS backup_logs (
     file_size INTEGER NOT NULL,
     status TEXT NOT NULL,
     error_message TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL
 );
 
 -- 5. 插入现有文件到file_metadata表（迁移现有数据）
-INSERT INTO file_metadata (filename, webdav_path, local_cache_path, upload_time, file_size, is_synced)
+INSERT INTO file_metadata (filename, webdav_path, local_cache_path, upload_time, file_size, is_synced, created_at, updated_at)
 SELECT
     file_name,
     'files/' || strftime('%Y/%m/%d', upload_time) || '/' || file_name,
     local_file_path,
     upload_time,
     file_size,
-    0 -- 标记为未同步到WebDAV
+    0, -- 标记为未同步到WebDAV
+    upload_time,
+    upload_time
 FROM upload_history
 WHERE status = 'success' AND local_file_path IS NOT NULL;
 
@@ -67,7 +69,7 @@ CREATE TABLE IF NOT EXISTS migration_status (
     start_time DATETIME,
     end_time DATETIME,
     error_log TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL
 );
 
 -- 8. 创建索引

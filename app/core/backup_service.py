@@ -17,6 +17,7 @@ import logging
 from .config import get_settings
 from .webdav_client import WebDAVClient
 from .database import get_db_connection
+from .timezone import get_beijing_now_naive, get_beijing_now_naive_iso
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class BackupService:
 
     def _generate_backup_filename(self) -> str:
         """生成备份文件名"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = get_beijing_now_naive().strftime("%Y%m%d_%H%M%S")
         return f"backup_{timestamp}.tar.gz"
 
     def _get_backup_webdav_path(self, filename: str) -> str:
@@ -63,7 +64,7 @@ class BackupService:
             'backup_path': backup_path,
             'file_size': 0,
             'error': None,
-            'created_at': datetime.now().isoformat()
+            'created_at': get_beijing_now_naive_iso()
         }
 
         try:
@@ -119,7 +120,7 @@ class BackupService:
         import json
 
         metadata = {
-            'backup_time': datetime.now().isoformat(),
+            'backup_time': get_beijing_now_naive_iso(),
             'app_name': self.settings.APP_NAME,
             'app_version': self.settings.APP_VERSION,
             'database_path': self.db_path,
@@ -162,7 +163,7 @@ class BackupService:
             logger.info("开始清理过期备份")
 
             deleted_count = 0
-            cutoff_date = datetime.now() - timedelta(days=self.settings.BACKUP_RETENTION_DAYS)
+            cutoff_date = get_beijing_now_naive() - timedelta(days=self.settings.BACKUP_RETENTION_DAYS)
 
             # 清理本地备份文件
             try:
@@ -229,7 +230,7 @@ class BackupService:
             'uploaded': False,
             'cleaned_count': 0,
             'error': None,
-            'started_at': datetime.now().isoformat()
+            'started_at': get_beijing_now_naive_iso()
         }
 
         try:
@@ -284,7 +285,7 @@ class BackupService:
                     error_msg
                 )
 
-        result['completed_at'] = datetime.now().isoformat()
+        result['completed_at'] = get_beijing_now_naive_iso()
         return result
 
     async def _log_backup_result(self, filename: str, file_size: int, status: str, error_message: Optional[str]):
@@ -293,17 +294,18 @@ class BackupService:
             conn = get_db_connection()
             cursor = conn.cursor()
 
+            now_iso = get_beijing_now_naive_iso()
             cursor.execute("""
                 INSERT INTO backup_logs
                 (backup_filename, backup_time, file_size, status, error_message, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 filename,
-                datetime.now().isoformat(),
+                now_iso,
                 file_size,
                 status,
                 error_message,
-                datetime.now().isoformat()
+                now_iso
             ))
 
             conn.commit()
@@ -330,11 +332,12 @@ class BackupService:
             last_backup = cursor.fetchone()
 
             # 获取备份总数和总大小
+            threshold = (get_beijing_now_naive() - timedelta(days=30)).isoformat()
             cursor.execute("""
                 SELECT COUNT(*), SUM(file_size)
                 FROM backup_logs
-                WHERE backup_time >= datetime('now', '-30 days')
-            """)
+                WHERE backup_time >= ?
+            """, (threshold,))
             backup_stats = cursor.fetchone()
 
             # 获取WebDAV备份文件列表
@@ -373,7 +376,7 @@ class BackupService:
 
     def _get_next_backup_time(self) -> str:
         """获取下次备份时间"""
-        now = datetime.now()
+        now = get_beijing_now_naive()
         next_backup = now.replace(hour=0, minute=0, second=0, microsecond=0)
         if now >= next_backup:
             next_backup += timedelta(days=1)

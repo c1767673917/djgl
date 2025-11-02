@@ -60,16 +60,16 @@ def test_db():
             file_name VARCHAR(255) NOT NULL,
             file_size INTEGER NOT NULL,
             file_extension VARCHAR(20),
-            upload_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            upload_time DATETIME,
             status VARCHAR(20) NOT NULL,
             error_code VARCHAR(50),
             error_message TEXT,
             yonyou_file_id VARCHAR(255),
             retry_count INTEGER DEFAULT 0,
             local_file_path VARCHAR(500),
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at TEXT DEFAULT NULL,
+            created_at DATETIME,
+            updated_at DATETIME,
+            deleted_at DATETIME DEFAULT NULL,
             checked INTEGER DEFAULT 0
         )
     """)
