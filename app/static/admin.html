@@ -160,19 +160,28 @@
                     <option value="failed">失败</option>
                 </select>
 
-                <input
-                    type="date"
-                    id="startDateInput"
-                    class="date-input"
-                    placeholder="开始日期"
-                >
+                <!-- 物流筛选 -->
+                <select id="logisticsFilter" class="filter-select">
+                    <option value="全部物流">全部物流</option>
+                    <!-- 动态加载选项 -->
+                </select>
 
-                <input
-                    type="date"
-                    id="endDateInput"
-                    class="date-input"
-                    placeholder="结束日期"
-                >
+                <!-- 日期筛选器 - 单行紧凑布局 -->
+                <div class="date-range-compact">
+                    <input
+                        type="date"
+                        id="startDateInput"
+                        class="date-input-compact"
+                        placeholder="开始"
+                    >
+                    <span class="date-separator">至</span>
+                    <input
+                        type="date"
+                        id="endDateInput"
+                        class="date-input-compact"
+                        placeholder="结束"
+                    >
+                </div>
 
                 <button class="btn-search" id="btnSearch">搜索</button>
                 <button class="btn-reset" id="btnReset">重置</button>

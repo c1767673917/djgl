@@ -619,3 +619,93 @@ class TestFileUpload:
             assert 'files' in files
             assert files['files'][0] == "test.jpg"
             assert files['files'][1] == test_image_bytes
+
+
+class TestDeliveryDetail:
+    """测试物流详情查询功能"""
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_detail_success(self):
+        """测试物流信息成功获取"""
+        client = YonYouClient()
+        mock_response = {
+            'code': '200',
+            'message': '操作成功',
+            'data': {
+                'deliveryVoucherDefineCharacter': {
+                    'RX003_name': '天津佳士达物流有限公司'
+                }
+            }
+        }
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')):
+            with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+                mock_http_response = Mock()
+                mock_http_response.json.return_value = mock_response
+                mock_get.return_value = mock_http_response
+
+                result = await client.get_delivery_detail('2385714919669497862')
+
+        assert result['success'] is True
+        assert result['logistics'] == '天津佳士达物流有限公司'
+        assert result['error_code'] is None
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_detail_missing_field(self):
+        """测试缺少RX003_name字段时返回None"""
+        client = YonYouClient()
+        mock_response = {
+            'code': '200',
+            'message': '操作成功',
+            'data': {
+                'deliveryVoucherDefineCharacter': {}
+            }
+        }
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')):
+            with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+                mock_http_response = Mock()
+                mock_http_response.json.return_value = mock_response
+                mock_get.return_value = mock_http_response
+
+                result = await client.get_delivery_detail('test_id')
+
+        assert result['success'] is True
+        assert result['logistics'] is None
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_detail_api_error(self):
+        """测试API返回错误场景"""
+        client = YonYouClient()
+        mock_response = {
+            'code': '500',
+            'message': '服务器内部错误'
+        }
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')):
+            with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+                mock_http_response = Mock()
+                mock_http_response.json.return_value = mock_response
+                mock_get.return_value = mock_http_response
+
+                result = await client.get_delivery_detail('test_id')
+
+        assert result['success'] is False
+        assert result['logistics'] is None
+        assert result['error_code'] == '500'
+        assert '服务器内部错误' in result['error_message']
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_detail_network_error(self):
+        """测试网络异常场景"""
+        client = YonYouClient()
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')):
+            with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
+                mock_get.side_effect = Exception('网络超时')
+                result = await client.get_delivery_detail('test_id')
+
+        assert result['success'] is False
+        assert result['logistics'] is None
+        assert result['error_code'] == 'NETWORK_ERROR'
+        assert '网络超时' in result['error_message']

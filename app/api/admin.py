@@ -27,7 +27,8 @@ async def get_admin_records(
     product_type: Optional[str] = Query(None, description="产品类型筛选(如:油脂/快消)"),
     status: Optional[str] = Query(None, description="状态筛选（pending/uploading/success/failed）"),
     start_date: Optional[str] = Query(None, description="开始日期（YYYY-MM-DD）"),
-    end_date: Optional[str] = Query(None, description="结束日期（YYYY-MM-DD）")
+    end_date: Optional[str] = Query(None, description="结束日期（YYYY-MM-DD）"),
+    logistics: Optional[str] = Query(None, description="物流公司筛选")
 ) -> Dict[str, Any]:
     """
     获取上传记录列表（管理页面）
@@ -41,6 +42,7 @@ async def get_admin_records(
     - status: 状态筛选（pending/uploading/success/failed）
     - start_date: 开始日期（格式：YYYY-MM-DD）
     - end_date: 结束日期（格式：YYYY-MM-DD）
+    - logistics: 物流公司筛选（'全部物流'表示不过滤）
 
     响应格式:
     {
@@ -83,6 +85,10 @@ async def get_admin_records(
             where_clauses.append("DATE(upload_time) <= ?")
             params.append(end_date)
 
+        if logistics and logistics != "全部物流":
+            where_clauses.append("logistics = ?")
+            params.append(logistics)
+
         where_sql = " AND ".join(where_clauses)
 
         # 查询总记录数
@@ -96,7 +102,7 @@ async def get_admin_records(
         # 查询分页数据（包含status、error_code、checked和notes字段）
         cursor.execute(f"""
             SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
-                   upload_time, status, error_code, error_message, checked, notes
+                   upload_time, status, error_code, error_message, checked, notes, logistics
             FROM upload_history
             WHERE {where_sql}
             ORDER BY upload_time DESC
@@ -121,7 +127,8 @@ async def get_admin_records(
                 "error_code": row[9],
                 "error_message": row[10],
                 "checked": bool(row[11]),  # SQLite INTEGER转Python布尔值
-                "notes": row[12]  # 新增备注字段
+                "notes": row[12],  # 新增备注字段
+                "logistics": row[13]
             })
 
         return {
@@ -131,6 +138,31 @@ async def get_admin_records(
             "total_pages": total_pages,
             "records": records
         }
+
+
+
+
+@router.get("/logistics-options")
+async def get_logistics_options() -> Dict[str, List[str]]:
+    """获取可选的物流公司列表(含默认'全部物流')
+
+    Returns:
+        包含logistics_list的字典
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT logistics
+            FROM upload_history
+            WHERE logistics IS NOT NULL AND logistics != ''
+            ORDER BY logistics ASC
+        """)
+        rows = cursor.fetchall()
+
+    logistics_list = ["全部物流"]
+    logistics_list.extend([row[0] for row in rows if row[0]])
+
+    return {"logistics_list": logistics_list}
 
 
 @router.get("/export")

@@ -68,6 +68,7 @@ def init_database():
                 yonyou_file_id VARCHAR(255),
                 retry_count INTEGER DEFAULT 0,
                 local_file_path VARCHAR(500),
+                logistics TEXT,
                 created_at DATETIME,
                 updated_at DATETIME,
                 deleted_at DATETIME
@@ -101,6 +102,10 @@ def init_database():
         # 添加备注字段 (支持管理员手工填入备注文本)
         if 'notes' not in columns:
             cursor.execute("ALTER TABLE upload_history ADD COLUMN notes TEXT DEFAULT NULL")
+
+        # 添加物流字段 (支持物流公司筛选)
+        if 'logistics' not in columns:
+            cursor.execute("ALTER TABLE upload_history ADD COLUMN logistics TEXT DEFAULT NULL")
 
         # 创建索引
         cursor.execute("""
@@ -148,6 +153,12 @@ def init_database():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_checked
             ON upload_history(checked)
+        """)
+
+        # 物流字段索引 (优化物流筛选查询性能)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_logistics
+            ON upload_history(logistics)
         """)
 
         conn.commit()

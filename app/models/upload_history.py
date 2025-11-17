@@ -20,7 +20,8 @@ class UploadHistory:
         error_message: Optional[str] = None,
         yonyou_file_id: Optional[str] = None,
         retry_count: int = 0,
-        local_file_path: Optional[str] = None
+        local_file_path: Optional[str] = None,
+        logistics: Optional[str] = None
     ):
         self.id = id
         self.business_id = business_id
@@ -37,3 +38,5 @@ class UploadHistory:
         self.yonyou_file_id = yonyou_file_id
         self.retry_count = retry_count
         self.local_file_path = local_file_path
+
+        self.logistics = logistics

@@ -171,3 +171,69 @@ class YonYouClient:
                 "error_code": "NETWORK_ERROR",
                 "error_message": str(e)
             }
+
+    async def get_delivery_detail(
+        self,
+        delivery_id: str,
+        retry_count: int = 0
+    ) -> Dict[str, Any]:
+        """查询销售发货单详情并提取物流公司名称
+
+        Args:
+            delivery_id: 发货单业务数据ID
+            retry_count: Token刷新重试次数
+
+        Returns:
+            包含物流信息的结果字典
+        """
+        try:
+            access_token = await self.get_access_token()
+            encoded_token = urllib.parse.quote(access_token, safe='')
+
+            parsed_auth_url = urllib.parse.urlparse(self.auth_url)
+            base_url = f"{parsed_auth_url.scheme}://{parsed_auth_url.netloc}"
+            detail_url = f"{base_url}/iuap-api-gateway/yonbip/sd/voucherdelivery/detail"
+
+            params = {
+                'access_token': encoded_token,
+                'id': delivery_id
+            }
+
+            async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT) as client:
+                response = await client.get(detail_url, params=params)
+                result = response.json()
+
+            if str(result.get('code')) == '200':
+                data = result.get('data') or {}
+                define_character = data.get('deliveryVoucherDefineCharacter') or {}
+                logistics = define_character.get('RX003_name')
+
+                return {
+                    'success': True,
+                    'logistics': logistics,
+                    'error_code': None,
+                    'error_message': None
+                }
+
+            error_code = str(result.get('code'))
+            error_message = result.get('message', '未知错误')
+
+            if error_code in ['1090003500065', '310036'] and retry_count == 0:
+                await self.get_access_token(force_refresh=True)
+                return await self.get_delivery_detail(delivery_id, retry_count + 1)
+
+            return {
+                'success': False,
+                'logistics': None,
+                'error_code': error_code,
+                'error_message': error_message
+            }
+
+        except Exception as exc:
+            return {
+                'success': False,
+                'logistics': None,
+                'error_code': 'NETWORK_ERROR',
+                'error_message': str(exc)
+            }
+

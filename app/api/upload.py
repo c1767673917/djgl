@@ -157,6 +157,19 @@ async def background_upload_to_yonyou(
                 if attempt < settings.MAX_RETRY_COUNT - 1:
                     await asyncio.sleep(settings.RETRY_DELAY)
 
+        # 物流信息查询 (上传成功后)
+        logistics = None
+        if yonyou_file_id and business_id:
+            try:
+                logistics_result = await yonyou_client.get_delivery_detail(business_id)
+                if logistics_result.get('success'):
+                    logistics = logistics_result.get('logistics')
+                    print(f"物流信息获取成功: {logistics or '(空)'}")
+                else:
+                    print(f"物流信息获取失败: {logistics_result.get('error_message', '未知错误')}")
+            except Exception as logistics_error:
+                print(f"物流信息查询异常: {str(logistics_error)}")
+
         # 4. 更新最终状态 (使用并发安全的数据库连接)
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -172,6 +185,7 @@ async def background_upload_to_yonyou(
                     UPDATE upload_history
                     SET status = 'success',
                         yonyou_file_id = ?,
+                        logistics = ?,
                         webdav_path = ?,
                         is_cached = ?,
                         cache_expiry_time = ?,
@@ -180,6 +194,7 @@ async def background_upload_to_yonyou(
                     WHERE id = ?
                 """, (
                     yonyou_file_id,
+                    logistics,
                     webdav_result.get('webdav_path') if webdav_result else None,
                     webdav_result.get('is_cached', False) if webdav_result else False,
                     cache_expiry_time,
@@ -194,6 +209,7 @@ async def background_upload_to_yonyou(
                     SET status = 'failed',
                         error_code = ?,
                         error_message = ?,
+                        logistics = ?,
                         webdav_path = ?,
                         is_cached = ?,
                         cache_expiry_time = ?,
@@ -203,6 +219,7 @@ async def background_upload_to_yonyou(
                 """, (
                     error_code,
                     error_message,
+                    None,
                     webdav_result.get('webdav_path') if webdav_result else None,
                     webdav_result.get('is_cached', False) if webdav_result else False,
                     cache_expiry_time,

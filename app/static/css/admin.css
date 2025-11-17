@@ -137,6 +137,29 @@ body {
     flex: 2;
 }
 
+/* 紧凑日期筛选器布局 */
+.date-range-compact {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 300px;
+}
+
+.date-input-compact {
+    width: 140px;
+    padding: 8px 10px;
+    font-size: 13px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.date-separator {
+    color: #666;
+    font-size: 13px;
+    font-weight: 500;
+}
+
 .btn-search, .btn-reset {
     padding: 10px 20px;
     border: none;

@@ -8,6 +8,7 @@ const state = {
         search: '',
         docType: '',
         productType: '',
+        logistics: '',  // 新增:物流筛选
         status: '',  // 新增：状态筛选
         startDate: '',
         endDate: ''
@@ -43,6 +44,7 @@ const elements = {
     docTypeFilter: document.getElementById('docTypeFilter'),
     productTypeFilter: document.getElementById('productTypeFilter'),
     statusFilter: document.getElementById('statusFilter'),  // 新增
+    logisticsFilter: document.getElementById('logisticsFilter'),  // 新增:物流筛选
     startDateInput: document.getElementById('startDateInput'),
     endDateInput: document.getElementById('endDateInput'),
     btnSearch: document.getElementById('btnSearch'),
@@ -101,6 +103,7 @@ function init() {
 
     // 加载数据
     loadStatistics();
+    loadLogisticsOptions();  // 新增:加载物流选项
     loadRecords();
 
     // 初始化WebDAV状态监控
@@ -136,6 +139,35 @@ async function loadStatistics() {
     }
 }
 
+// 加载物流公司选项列表
+async function loadLogisticsOptions() {
+    try {
+        const response = await fetch('/api/admin/logistics-options');
+        if (!response.ok) {
+            throw new Error('加载物流选项失败');
+        }
+
+        const data = await response.json();
+        const selectElement = elements.logisticsFilter;
+
+        // 清空现有选项 (保留"全部物流")
+        selectElement.innerHTML = '<option value="全部物流">全部物流</option>';
+
+        // 添加物流选项 (跳过第一个"全部物流",因为已添加)
+        data.logistics_list.slice(1).forEach(logistics => {
+            const option = document.createElement('option');
+            option.value = logistics;
+            option.textContent = logistics;
+            selectElement.appendChild(option);
+        });
+
+        console.log('✓ 物流选项加载成功:', data.logistics_list.length - 1, '个选项');
+    } catch (error) {
+        console.error('✗ 加载物流选项失败:', error);
+        // 降级处理: 保留"全部物流"选项
+    }
+}
+
 // 加载记录列表
 async function loadRecords() {
     // 显示加载状态
@@ -154,6 +186,7 @@ async function loadRecords() {
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
         if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.status) params.append('status', state.filters.status);  // 新增
+        if (state.filters.logistics && state.filters.logistics !== '全部物流') params.append('logistics', state.filters.logistics);  // 新增:物流筛选
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
@@ -307,6 +340,7 @@ function handleSearch() {
     state.filters.docType = elements.docTypeFilter.value;
     state.filters.productType = elements.productTypeFilter.value;
     state.filters.status = elements.statusFilter ? elements.statusFilter.value : '';  // 新增
+    state.filters.logistics = elements.logisticsFilter ? elements.logisticsFilter.value : '';  // 新增:物流筛选
     state.filters.startDate = elements.startDateInput.value;
     state.filters.endDate = elements.endDateInput.value;
 
@@ -322,6 +356,9 @@ function handleReset() {
     if (elements.statusFilter) {
         elements.statusFilter.value = '';  // 新增
     }
+    if (elements.logisticsFilter) {
+        elements.logisticsFilter.value = '全部物流';  // 新增:重置物流筛选
+    }
     elements.startDateInput.value = '';
     elements.endDateInput.value = '';
 
@@ -330,6 +367,7 @@ function handleReset() {
         docType: '',
         productType: '',
         status: '',  // 新增
+        logistics: '',  // 新增:物流筛选
         startDate: '',
         endDate: ''
     };
@@ -348,6 +386,7 @@ async function handleExport() {
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
         if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.status) params.append('status', state.filters.status);  // 新增
+        if (state.filters.logistics && state.filters.logistics !== '全部物流') params.append('logistics', state.filters.logistics);  // 新增:物流筛选
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
