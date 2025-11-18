@@ -2,6 +2,8 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import asyncio
+import time
 from pydantic import BaseModel
 import csv
 import io
@@ -265,6 +267,7 @@ async def export_records(
             image_local_count = 0
             image_webdav_count = 0
             image_missing_count = 0
+            download_jobs = []
 
             # 写入数据并收集图片文件
             for row in rows:
@@ -290,19 +293,12 @@ async def export_records(
                             f"business_id={business_id} path={local_file_path} webdav_path={webdav_path}"
                         )
 
-                    # 尝试从WebDAV或缓存中获取图片
-                    try:
-                        if file_manager is None:
-                            file_manager = FileManager()
-                        file_content = await file_manager.get_file(webdav_path)
-                        zipf.writestr(arcname, file_content)
-                        image_webdav_count += 1
-                    except Exception as e:  # noqa: BLE001
-                        image_missing_count += 1
-                        logger.warning(
-                            f"[导出] WebDAV图片获取失败 doc_number={doc_number} "
-                            f"business_id={business_id} webdav_path={webdav_path} 错误={str(e)}"
-                        )
+                    download_jobs.append({
+                        "arcname": arcname,
+                        "webdav_path": webdav_path,
+                        "doc_number": doc_number,
+                        "business_id": business_id
+                    })
                 elif has_local_path:
                     # 只有本地路径信息, 但文件不存在且无webdav_path
                     image_missing_count += 1
@@ -314,6 +310,46 @@ async def export_records(
                     # 没有可用的图片信息
                     image_missing_count += 1
                     logger.debug(f"[导出] 记录无图片 doc_number={doc_number} business_id={business_id}")
+
+            if download_jobs:
+                if file_manager is None:
+                    file_manager = FileManager()
+
+                concurrency_limit = 15
+                semaphore = asyncio.Semaphore(concurrency_limit)
+                start_time = time.monotonic()
+
+                logger.info(
+                    f"[导出] 开始并发下载WebDAV文件 count={len(download_jobs)} 并发={concurrency_limit}"
+                )
+
+                async def download_and_write(job: Dict[str, Any]) -> bool:
+                    async with semaphore:
+                        try:
+                            file_content = await file_manager.get_file(job["webdav_path"])
+                            zipf.writestr(job["arcname"], file_content)
+                            return True
+                        except Exception as e:  # noqa: BLE001
+                            logger.warning(
+                                f"[导出] WebDAV图片获取失败 doc_number={job['doc_number']} "
+                                f"business_id={job['business_id']} webdav_path={job['webdav_path']} 错误={str(e)}"
+                            )
+                            return False
+
+                download_results = await asyncio.gather(
+                    *(download_and_write(job) for job in download_jobs)
+                )
+
+                webdav_success = sum(1 for result in download_results if result)
+                webdav_failed = len(download_results) - webdav_success
+                image_webdav_count += webdav_success
+                image_missing_count += webdav_failed
+
+                elapsed = time.monotonic() - start_time
+                logger.info(
+                    f"[导出] 并发下载完成 成功={webdav_success} 失败={webdav_failed} "
+                    f"耗时={elapsed:.2f}s"
+                )
 
             logger.info(
                 f"[导出] 图片打包完成: 本地={image_local_count}, WebDAV={image_webdav_count}, "
