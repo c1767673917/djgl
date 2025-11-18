@@ -172,7 +172,8 @@ async def export_records(
     product_type: Optional[str] = Query(None, description="产品类型筛选"),
     status: Optional[str] = Query(None, description="状态筛选"),
     start_date: Optional[str] = Query(None, description="开始日期"),
-    end_date: Optional[str] = Query(None, description="结束日期")
+    end_date: Optional[str] = Query(None, description="结束日期"),
+    logistics: Optional[str] = Query(None, description="物流公司筛选")
 ):
     """
     导出上传记录为ZIP包（包含Excel表格和所有图片文件）
@@ -181,6 +182,12 @@ async def export_records(
 
     响应: ZIP文件流
     """
+    import logging
+    from app.core.file_manager import FileManager
+
+    logger = logging.getLogger(__name__)
+    file_manager = None  # 延迟初始化
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
@@ -213,18 +220,30 @@ async def export_records(
             where_clauses.append("DATE(upload_time) <= ?")
             params.append(end_date)
 
+        if logistics and logistics != "全部物流":
+            where_clauses.append("logistics = ?")
+            params.append(logistics)
+
         where_sql = " AND ".join(where_clauses)
 
-        # 查询所有匹配记录（包括status、local_file_path和notes）
+        # 动态检测webdav_path字段是否存在（兼容未完成迁移的旧数据库）
+        cursor.execute("PRAGMA table_info(upload_history)")
+        columns = {col[1] for col in cursor.fetchall()}
+        has_webdav_path = "webdav_path" in columns
+        webdav_select = "webdav_path" if has_webdav_path else "NULL as webdav_path"
+
+        # 查询所有匹配记录（包括status、local_file_path、notes和webdav_path）
         cursor.execute(f"""
             SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
-                   file_size, status, local_file_path, notes
+                   file_size, status, local_file_path, notes, {webdav_select}
             FROM upload_history
             WHERE {where_sql}
             ORDER BY upload_time DESC
         """, params)
 
         rows = cursor.fetchall()
+
+    logger.info(f"[导出] 开始导出上传记录，筛选后记录数={len(rows)}")
 
     # 创建临时目录和ZIP文件
     temp_dir = tempfile.mkdtemp()
@@ -243,16 +262,67 @@ async def export_records(
             headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态", "备注"]
             ws.append(headers)
 
+            image_local_count = 0
+            image_webdav_count = 0
+            image_missing_count = 0
+
             # 写入数据并收集图片文件
             for row in rows:
-                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, status, local_file_path, notes = row
+                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, status, local_file_path, notes, webdav_path = row
                 ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size, status, notes or ''])
 
-                # 添加本地图片文件到ZIP（所有状态的记录，只要文件存在就添加）
-                if local_file_path and os.path.exists(local_file_path):
-                    # 在ZIP中使用相对路径：images/文件名
-                    arcname = os.path.join("images", os.path.basename(local_file_path))
+                # 在ZIP中使用相对路径：images/文件名
+                # 优先使用数据库采集的file_name，同步WebDAV存储
+                arcname = os.path.join("images", file_name or (os.path.basename(local_file_path) if local_file_path else f"{business_id}_{doc_number or 'unknown'}"))
+
+                # 优先使用本地图片文件, 如果不存在则回退到WebDAV
+                has_local_path = bool(local_file_path)
+                local_exists = os.path.exists(local_file_path) if local_file_path else False
+
+                if local_exists:
                     zipf.write(local_file_path, arcname=arcname)
+                    image_local_count += 1
+                elif webdav_path:
+                    if has_local_path:
+                        # 数据中存在本地路径但文件缺失, 尝试从WebDAV补偿
+                        logger.info(
+                            f"[导出] 本地图片缺失, 尝试从WebDAV获取 doc_number={doc_number} "
+                            f"business_id={business_id} path={local_file_path} webdav_path={webdav_path}"
+                        )
+
+                    # 尝试从WebDAV或缓存中获取图片
+                    try:
+                        if file_manager is None:
+                            file_manager = FileManager()
+                        file_content = await file_manager.get_file(webdav_path)
+                        zipf.writestr(arcname, file_content)
+                        image_webdav_count += 1
+                    except Exception as e:  # noqa: BLE001
+                        image_missing_count += 1
+                        logger.warning(
+                            f"[导出] WebDAV图片获取失败 doc_number={doc_number} "
+                            f"business_id={business_id} webdav_path={webdav_path} 错误={str(e)}"
+                        )
+                elif has_local_path:
+                    # 只有本地路径信息, 但文件不存在且无webdav_path
+                    image_missing_count += 1
+                    logger.warning(
+                        f"[导出] 本地图片路径存在但文件缺失且无webdav_path doc_number={doc_number} "
+                        f"business_id={business_id} path={local_file_path}"
+                    )
+                else:
+                    # 没有可用的图片信息
+                    image_missing_count += 1
+                    logger.debug(f"[导出] 记录无图片 doc_number={doc_number} business_id={business_id}")
+
+            logger.info(
+                f"[导出] 图片打包完成: 本地={image_local_count}, WebDAV={image_webdav_count}, "
+                f"缺失={image_missing_count}"
+            )
+
+            # 如果没有任何图片, 也创建一个空的 images/ 目录, 保持ZIP结构一致
+            if image_local_count == 0 and image_webdav_count == 0:
+                zipf.writestr(zipfile.ZipInfo("images/"), b"")
 
             # 保存Excel到临时文件
             excel_temp_path = os.path.join(temp_dir, f"upload_records_{timestamp}.xlsx")
@@ -269,7 +339,7 @@ async def export_records(
             background=None  # 文件下载后不自动删除，需要手动清理
         )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # 清理临时文件
         if os.path.exists(zip_path):
             os.remove(zip_path)

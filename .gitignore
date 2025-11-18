@@ -48,3 +48,6 @@ logs/
 tmp/
 temp/
 *.tmp
+
+# 缓存目录
+cache/2025/
