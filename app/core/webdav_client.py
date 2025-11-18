@@ -218,7 +218,14 @@ class WebDAVClient:
         webdav_path: str,
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> Dict[str, Any]:
-        """上传文件到WebDAV"""
+        """上传文件到WebDAV并做完整性校验
+
+        注意:
+            - 仅根据HTTP状态码(200/201)判断成功在某些WebDAV/OneDrive网关上不可靠,
+              曾出现返回201但远端文件大小为0字节的情况。
+            - 这里在上传成功后通过PROPFIND再次获取文件大小,和本地文件大小对比,
+              不一致则视为上传失败,交由上层降级到临时存储/待同步机制处理。
+        """
         try:
             # 检查本地文件是否存在
             if not os.path.exists(local_path):
@@ -246,6 +253,27 @@ class WebDAVClient:
             # 获取ETag
             etag = response.headers.get('ETag', '').strip('"')
 
+            # === 上传后完整性校验 ===
+            # 部分后端实现(例如通过WebDAV转发到OneDrive)存在偶发写入失败但仍返回201的情况,
+            # 这里通过PROPFIND校验远端文件大小,确保与本地一致。
+            try:
+                remote_size = await self.get_file_size(webdav_path)
+            except Exception as e:
+                # 记录错误并视为上传失败,交由上层降级处理
+                raise Exception(f"WebDAV完整性校验失败: 无法获取远端文件大小 - {str(e)}") from e
+
+            # 如果无法获取大小或者大小为0 / 与本地不一致,都认为是上传失败
+            if remote_size is None:
+                raise Exception("WebDAV完整性校验失败: 远端文件大小未知")
+
+            if remote_size == 0:
+                raise Exception("WebDAV完整性校验失败: 远端文件大小为0字节")
+
+            if remote_size != file_size:
+                raise Exception(
+                    f"WebDAV完整性校验失败: 本地大小={file_size}字节, 远端大小={remote_size}字节"
+                )
+
             result = {
                 'success': True,
                 'webdav_path': webdav_path,
@@ -265,6 +293,53 @@ class WebDAVClient:
                 'error': error_msg,
                 'webdav_path': webdav_path
             }
+
+    async def get_file_size(self, webdav_path: str) -> Optional[int]:
+        """获取远端文件大小(字节)
+
+        使用PROPFIND Depth=0 请求只查询单个资源的 `getcontentlength` 属性。
+        """
+        try:
+            # 确保路径是相对路径,交由 _make_request 统一拼接
+            headers = {
+                'Depth': '0',
+                'Content-Type': 'application/xml; charset=utf-8'
+            }
+
+            propfind_xml = '''<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+    <D:prop>
+        <D:getcontentlength/>
+    </D:prop>
+</D:propfind>'''
+
+            response = await self._make_request(
+                'PROPFIND',
+                webdav_path,
+                content=propfind_xml.encode('utf-8'),
+                headers=headers
+            )
+
+            # 解析XML响应
+            root = ET.fromstring(response.content)
+            namespaces = {'D': 'DAV:'}
+
+            length_elem = root.find('.//D:getcontentlength', namespaces)
+            if length_elem is None or not (length_elem.text and length_elem.text.strip().isdigit()):
+                logger.warning(f"未在PROPFIND响应中找到有效的getcontentlength: {webdav_path}")
+                return None
+
+            size = int(length_elem.text.strip())
+            logger.debug(f"获取WebDAV文件大小成功: {webdav_path} -> {size} bytes")
+            return size
+
+        except WebDAVNotFoundError:
+            # 资源不存在,等价于大小为0
+            logger.warning(f"获取文件大小失败,文件不存在: {webdav_path}")
+            return None
+        except Exception as e:
+            logger.error(f"获取WebDAV文件大小失败 {webdav_path}: {str(e)}")
+            return None
 
     @log_async_function_call()
     async def download_file(self, webdav_path: str) -> bytes:

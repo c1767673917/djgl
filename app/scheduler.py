@@ -16,6 +16,8 @@ from apscheduler.executors.asyncio import AsyncIOExecutor
 from .core.config import get_settings
 from .core.file_manager import FileManager
 from .core.backup_service import BackupService
+from .core.database import get_db_connection
+from .core.webdav_client import WebDAVClient
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,92 @@ async def sync_pending_files_task():
         logger.error(f"待同步文件检查任务异常: {str(e)}")
 
 
+async def webdav_integrity_check_task(max_records: int = 200):
+    """
+    WebDAV文件完整性巡检任务
+
+    设计目标:
+        - 定期抽样检查upload_history中标记为success且存在webdav_path的记录,
+          对比本地记录的file_size与WebDAV端实际文件大小,尽早发现远端0字节
+          或大小不一致的问题,避免只有在管理员预览时才暴露。
+        - 目前仅记录日志,不自动修改数据库状态,以免影响现有业务流程。
+    """
+    try:
+        logger.info("执行WebDAV文件完整性检查任务")
+
+        settings = get_config()
+        file_manager = get_file_manager()
+
+        # 先确认WebDAV可用
+        if not await file_manager.check_webdav_health():
+            logger.warning("WebDAV不可用,跳过完整性检查任务")
+            return
+
+        webdav_client = WebDAVClient()
+
+        # 从数据库中抽取最近的记录进行检查,避免一次性全表扫描
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, file_name, file_size, webdav_path
+                FROM upload_history
+                WHERE status = 'success'
+                  AND webdav_path IS NOT NULL
+                  AND file_size IS NOT NULL
+                  AND file_size > 0
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (max_records,),
+            )
+            rows = cursor.fetchall()
+
+        if not rows:
+            logger.info("WebDAV完整性检查: 无需检查的记录")
+            return
+
+        problem_count = 0
+
+        for row in rows:
+            record_id = row["id"] if isinstance(row, dict) else row[0]
+            file_name = row["file_name"] if isinstance(row, dict) else row[1]
+            file_size = row["file_size"] if isinstance(row, dict) else row[2]
+            webdav_path = row["webdav_path"] if isinstance(row, dict) else row[3]
+
+            try:
+                remote_size = await webdav_client.get_file_size(webdav_path)
+
+                # 无法获取大小,记录警告但不中断整个任务
+                if remote_size is None:
+                    logger.warning(
+                        f"[WebDAV完整性检查] 记录id={record_id}, 文件={file_name}, "
+                        f"webdav_path={webdav_path} 无法获取远端大小"
+                    )
+                    continue
+
+                # 远端为0字节或大小不一致,都记为潜在问题
+                if remote_size == 0 or remote_size != file_size:
+                    problem_count += 1
+                    logger.error(
+                        f"[WebDAV完整性问题] id={record_id}, 文件={file_name}, "
+                        f"本地file_size={file_size}, 远端size={remote_size}, "
+                        f"webdav_path={webdav_path}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"[WebDAV完整性检查异常] id={record_id}, 文件={file_name}, 错误={str(e)}"
+                )
+
+        logger.info(
+            f"WebDAV文件完整性检查完成: 共检查{len(rows)}条记录, "
+            f"发现{problem_count}条疑似异常"
+        )
+
+    except Exception as e:
+        logger.error(f"WebDAV文件完整性检查任务异常: {str(e)}")
+
+
 # ========== 调度器类 ==========
 
 class TaskScheduler:
@@ -209,6 +297,16 @@ class TaskScheduler:
         )
         logger.info(f"已设置待同步文件检查任务，间隔{self.settings.SYNC_RETRY_INTERVAL}秒")
 
+        # 5. WebDAV文件完整性检查任务（每日凌晨3点, 抽样最近N条记录）
+        self.scheduler.add_job(
+            func=webdav_integrity_check_task,
+            trigger=CronTrigger(hour=3, minute=0),
+            id='webdav_integrity_check',
+            name='WebDAV文件完整性检查',
+            replace_existing=True
+        )
+        logger.info("已设置WebDAV文件完整性检查任务，每日凌晨3点执行")
+
     async def start(self):
         """启动调度器"""
         try:
@@ -277,6 +375,9 @@ class TaskScheduler:
             elif job_id == 'sync_pending_files':
                 await sync_pending_files_task()
                 return {'success': True, 'message': '待同步文件检查任务已执行'}
+            elif job_id == 'webdav_integrity_check':
+                await webdav_integrity_check_task()
+                return {'success': True, 'message': 'WebDAV文件完整性检查任务已执行'}
             else:
                 return {'success': False, 'error': f'未知任务ID: {job_id}'}
 
