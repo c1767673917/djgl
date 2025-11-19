@@ -130,7 +130,13 @@ async def background_upload_to_yonyou(
             except Exception as e:
                 print(f"本地备份保存失败: {str(e)}")
 
-        # 3. 上传到用友云（保持现有重试机制）
+        # 3. 上传到用友云
+        #
+        # 约定:
+        # - 用友云 Token 相关错误(310036/1090003500065) 只在 YonYouClient 内部处理,
+        #   由 YonYouClient.upload_file 负责刷新 Token 并重试一次。
+        # - 这里的重试循环只负责“网络级别”的错误(例如 NETWORK_ERROR),
+        #   避免和 YonYouClient 内部的 Token 重试产生交叉、竞态。
         yonyou_file_id = None
         error_code = None
         error_message = None
@@ -141,7 +147,6 @@ async def background_upload_to_yonyou(
                 file_content,
                 new_filename,
                 business_id,
-                retry_count=attempt,
                 business_type=business_type
             )
 
@@ -150,9 +155,14 @@ async def background_upload_to_yonyou(
                 retry_count = attempt
                 break
             else:
-                error_code = result["error_code"]
-                error_message = result["error_message"]
+                # 记录最近一次失败信息
+                error_code = result.get("error_code")
+                error_message = result.get("error_message")
                 retry_count = attempt + 1
+
+                # 仅在网络错误时进行重试, 其他业务错误直接退出循环
+                if error_code != "NETWORK_ERROR":
+                    break
 
                 if attempt < settings.MAX_RETRY_COUNT - 1:
                     await asyncio.sleep(settings.RETRY_DELAY)

@@ -413,6 +413,44 @@ class TestFileUpload:
             assert mock_get.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_upload_file_invalid_token_retry_integer_code(
+        self,
+        test_image_bytes,
+        mock_token_response_success,
+        mock_upload_response_invalid_token_integer,
+        mock_upload_response_success
+    ):
+        """测试非法token(错误码310036, 整数错误码)时的重试机制"""
+        client = YonYouClient()
+
+        with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get, \
+             patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+
+            # Mock Token获取
+            mock_get_response = Mock()
+            mock_get_response.json.return_value = mock_token_response_success
+            mock_get.return_value = mock_get_response
+
+            # 第一次上传返回非法token(整数错误码)，第二次成功
+            mock_post.side_effect = [
+                Mock(json=Mock(return_value=mock_upload_response_invalid_token_integer)),
+                Mock(json=Mock(return_value=mock_upload_response_success))
+            ]
+
+            result = await client.upload_file(
+                file_content=test_image_bytes,
+                file_name="test.jpg",
+                business_id="123456"
+            )
+
+            # 验证重试成功
+            assert result["success"] is True
+            # 验证调用了两次上传API
+            assert mock_post.call_count == 2
+            # 验证调用了两次Token获取(第二次是force_refresh)
+            assert mock_get.call_count == 2
+
+    @pytest.mark.asyncio
     async def test_upload_file_retry_limit(
         self,
         test_image_bytes,

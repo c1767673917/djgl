@@ -1,4 +1,293 @@
 {
-  "files": [],
+  "files": [
+    {
+      "temp_path": "./temp_storage/20251119_111615_SO001_20251119111600_44443444.jpg",
+      "filename": "SO001_20251119111600_44443444.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111600_44443444.jpg",
+      "created_time": "2025-11-19T11:16:15.727502"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111617_SO001_20251119111600_2d5cbbc4.jpg",
+      "filename": "SO001_20251119111600_2d5cbbc4.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111600_2d5cbbc4.jpg",
+      "created_time": "2025-11-19T11:16:17.199167"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111617_SO001_20251119111600_a8422231.jpg",
+      "filename": "SO001_20251119111600_a8422231.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111600_a8422231.jpg",
+      "created_time": "2025-11-19T11:16:17.901526"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111702_SO001_20251119111647_20ba30ae.jpg",
+      "filename": "SO001_20251119111647_20ba30ae.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111647_20ba30ae.jpg",
+      "created_time": "2025-11-19T11:17:02.355877"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111703_SO001_20251119111647_d353ddc2.jpg",
+      "filename": "SO001_20251119111647_d353ddc2.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111647_d353ddc2.jpg",
+      "created_time": "2025-11-19T11:17:03.176529"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111703_SO001_20251119111647_d0357f6b.jpg",
+      "filename": "SO001_20251119111647_d0357f6b.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111647_d0357f6b.jpg",
+      "created_time": "2025-11-19T11:17:03.953060"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111747_SO001_20251119111732_ec4bcdc3.jpg",
+      "filename": "SO001_20251119111732_ec4bcdc3.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111732_ec4bcdc3.jpg",
+      "created_time": "2025-11-19T11:17:47.790214"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111748_SO001_20251119111732_b417c21a.jpg",
+      "filename": "SO001_20251119111732_b417c21a.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111732_b417c21a.jpg",
+      "created_time": "2025-11-19T11:17:48.298722"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111749_SO001_20251119111732_2acd6349.jpg",
+      "filename": "SO001_20251119111732_2acd6349.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111732_2acd6349.jpg",
+      "created_time": "2025-11-19T11:17:49.320837"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111831_SO001_20251119111816_52ed5e91.jpg",
+      "filename": "SO001_20251119111816_52ed5e91.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111816_52ed5e91.jpg",
+      "created_time": "2025-11-19T11:18:31.740916"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111832_SO001_20251119111816_8f126f27.jpg",
+      "filename": "SO001_20251119111816_8f126f27.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111816_8f126f27.jpg",
+      "created_time": "2025-11-19T11:18:32.264575"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111833_SO001_20251119111816_37d376ac.jpg",
+      "filename": "SO001_20251119111816_37d376ac.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111816_37d376ac.jpg",
+      "created_time": "2025-11-19T11:18:33.619905"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111916_SO001_20251119111901_ffa51353.jpg",
+      "filename": "SO001_20251119111901_ffa51353.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111901_ffa51353.jpg",
+      "created_time": "2025-11-19T11:19:16.288809"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111917_SO001_20251119111901_ec64d4c9.jpg",
+      "filename": "SO001_20251119111901_ec64d4c9.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111901_ec64d4c9.jpg",
+      "created_time": "2025-11-19T11:19:17.330449"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111918_SO001_20251119111901_b8010ea4.jpg",
+      "filename": "SO001_20251119111901_b8010ea4.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111901_b8010ea4.jpg",
+      "created_time": "2025-11-19T11:19:18.004776"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111959_SO001_20251119111944_0275be44.jpg",
+      "filename": "SO001_20251119111944_0275be44.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111944_0275be44.jpg",
+      "created_time": "2025-11-19T11:19:59.249723"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_111959_SO001_20251119111944_c34b3b8e.jpg",
+      "filename": "SO001_20251119111944_c34b3b8e.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111944_c34b3b8e.jpg",
+      "created_time": "2025-11-19T11:19:59.919895"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112000_SO001_20251119111944_0e529ba8.jpg",
+      "filename": "SO001_20251119111944_0e529ba8.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119111944_0e529ba8.jpg",
+      "created_time": "2025-11-19T11:20:00.393344"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112046_SO001_20251119112031_a188baf3.jpg",
+      "filename": "SO001_20251119112031_a188baf3.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112031_a188baf3.jpg",
+      "created_time": "2025-11-19T11:20:46.350523"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112047_SO001_20251119112031_8f7c25ca.jpg",
+      "filename": "SO001_20251119112031_8f7c25ca.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112031_8f7c25ca.jpg",
+      "created_time": "2025-11-19T11:20:47.280711"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112047_SO001_20251119112031_487bb963.jpg",
+      "filename": "SO001_20251119112031_487bb963.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112031_487bb963.jpg",
+      "created_time": "2025-11-19T11:20:47.773143"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112127_SO001_20251119112112_b98fa09b.jpg",
+      "filename": "SO001_20251119112112_b98fa09b.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112112_b98fa09b.jpg",
+      "created_time": "2025-11-19T11:21:27.611510"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112128_SO001_20251119112112_47bb4a48.jpg",
+      "filename": "SO001_20251119112112_47bb4a48.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112112_47bb4a48.jpg",
+      "created_time": "2025-11-19T11:21:28.698688"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112129_SO001_20251119112112_53f2148d.jpg",
+      "filename": "SO001_20251119112112_53f2148d.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112112_53f2148d.jpg",
+      "created_time": "2025-11-19T11:21:29.089817"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112209_SO001_20251119112154_94ccd60d.jpg",
+      "filename": "SO001_20251119112154_94ccd60d.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112154_94ccd60d.jpg",
+      "created_time": "2025-11-19T11:22:09.937435"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112211_SO001_20251119112154_d274f07f.jpg",
+      "filename": "SO001_20251119112154_d274f07f.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112154_d274f07f.jpg",
+      "created_time": "2025-11-19T11:22:11.020236"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112211_SO001_20251119112154_15cd4c49.jpg",
+      "filename": "SO001_20251119112154_15cd4c49.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112154_15cd4c49.jpg",
+      "created_time": "2025-11-19T11:22:11.429619"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112252_SO001_20251119112236_178deeac.jpg",
+      "filename": "SO001_20251119112236_178deeac.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112236_178deeac.jpg",
+      "created_time": "2025-11-19T11:22:52.007491"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112252_SO001_20251119112236_e39349b8.jpg",
+      "filename": "SO001_20251119112236_e39349b8.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112236_e39349b8.jpg",
+      "created_time": "2025-11-19T11:22:52.905543"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112253_SO001_20251119112236_d6bd3d84.jpg",
+      "filename": "SO001_20251119112236_d6bd3d84.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112236_d6bd3d84.jpg",
+      "created_time": "2025-11-19T11:22:53.600344"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112335_SO001_20251119112320_f9f55fd6.jpg",
+      "filename": "SO001_20251119112320_f9f55fd6.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112320_f9f55fd6.jpg",
+      "created_time": "2025-11-19T11:23:35.410437"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112335_SO001_20251119112320_685cc49f.jpg",
+      "filename": "SO001_20251119112320_685cc49f.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112320_685cc49f.jpg",
+      "created_time": "2025-11-19T11:23:35.917500"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112337_SO001_20251119112320_89d04846.jpg",
+      "filename": "SO001_20251119112320_89d04846.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112320_89d04846.jpg",
+      "created_time": "2025-11-19T11:23:37.115489"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112419_SO001_20251119112403_975e3f70.jpg",
+      "filename": "SO001_20251119112403_975e3f70.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112403_975e3f70.jpg",
+      "created_time": "2025-11-19T11:24:19.053193"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112420_SO001_20251119112403_7a47ce43.jpg",
+      "filename": "SO001_20251119112403_7a47ce43.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112403_7a47ce43.jpg",
+      "created_time": "2025-11-19T11:24:20.026395"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112420_SO001_20251119112403_8725a5ef.jpg",
+      "filename": "SO001_20251119112403_8725a5ef.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112403_8725a5ef.jpg",
+      "created_time": "2025-11-19T11:24:20.653472"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112501_SO001_20251119112446_1f14152a.jpg",
+      "filename": "SO001_20251119112446_1f14152a.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112446_1f14152a.jpg",
+      "created_time": "2025-11-19T11:25:01.797228"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112502_SO001_20251119112446_a732e4b0.jpg",
+      "filename": "SO001_20251119112446_a732e4b0.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112446_a732e4b0.jpg",
+      "created_time": "2025-11-19T11:25:02.920096"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112503_SO001_20251119112446_4da92b71.jpg",
+      "filename": "SO001_20251119112446_4da92b71.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112446_4da92b71.jpg",
+      "created_time": "2025-11-19T11:25:03.741917"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112548_SO001_20251119112532_f5453488.jpg",
+      "filename": "SO001_20251119112532_f5453488.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112532_f5453488.jpg",
+      "created_time": "2025-11-19T11:25:48.041644"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112549_SO001_20251119112532_1b1518db.jpg",
+      "filename": "SO001_20251119112532_1b1518db.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112532_1b1518db.jpg",
+      "created_time": "2025-11-19T11:25:49.283180"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112549_SO001_20251119112532_513b0c4d.jpg",
+      "filename": "SO001_20251119112532_513b0c4d.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112532_513b0c4d.jpg",
+      "created_time": "2025-11-19T11:25:49.954014"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112631_SO001_20251119112615_9698d537.jpg",
+      "filename": "SO001_20251119112615_9698d537.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112615_9698d537.jpg",
+      "created_time": "2025-11-19T11:26:31.046046"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112632_SO001_20251119112615_38821f89.jpg",
+      "filename": "SO001_20251119112615_38821f89.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112615_38821f89.jpg",
+      "created_time": "2025-11-19T11:26:32.055797"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112632_SO001_20251119112615_cd8fac2e.jpg",
+      "filename": "SO001_20251119112615_cd8fac2e.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112615_cd8fac2e.jpg",
+      "created_time": "2025-11-19T11:26:32.704860"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112955_SO001_20251119112940_0bd8abe5.jpg",
+      "filename": "SO001_20251119112940_0bd8abe5.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112940_0bd8abe5.jpg",
+      "created_time": "2025-11-19T11:29:55.576685"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112955_SO001_20251119112940_f5849887.jpg",
+      "filename": "SO001_20251119112940_f5849887.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112940_f5849887.jpg",
+      "created_time": "2025-11-19T11:29:55.831078"
+    },
+    {
+      "temp_path": "./temp_storage/20251119_112956_SO001_20251119112940_25019dfe.jpg",
+      "filename": "SO001_20251119112940_25019dfe.jpg",
+      "webdav_path": "files/2025/11/19/SO001_20251119112940_25019dfe.jpg",
+      "created_time": "2025-11-19T11:29:56.113500"
+    }
+  ],
   "last_sync": "2025-11-18T09:45:34.050447"
 }

@@ -203,6 +203,16 @@ def mock_upload_response_invalid_token():
 
 
 @pytest.fixture
+def mock_upload_response_invalid_token_integer():
+    """Mock 非法Token响应(错误码310036, 整数错误码)"""
+    return {
+        "code": 310036,
+        "message": "非法token",
+        "data": None
+    }
+
+
+@pytest.fixture
 def mock_upload_response_error():
     """Mock失败的上传响应"""
     return {
