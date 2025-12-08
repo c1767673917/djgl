@@ -13,7 +13,29 @@
             <h1>上传记录管理</h1>
             <div class="header-actions">
                 <button class="btn-refresh" id="btnRefresh">刷新</button>
-                <button class="btn-export" id="btnExport">导出CSV</button>
+                <!-- Export Options Wrapper -->
+                <div class="export-wrapper">
+                    <button class="btn-export" id="btnExport" aria-expanded="false" aria-controls="exportOptionsPanel">
+                        导出选项 <span class="export-arrow">▼</span>
+                    </button>
+
+                    <!-- Export Options Panel -->
+                    <div class="export-options-panel" id="exportOptionsPanel" style="display: none;">
+                        <div class="export-option">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="exportExcelCheckbox" checked>
+                                <span>导出Excel数据</span>
+                            </label>
+                        </div>
+                        <div class="export-option">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="exportImagesCheckbox" checked>
+                                <span>导出图片</span>
+                            </label>
+                        </div>
+                        <button class="btn-confirm-export" id="btnConfirmExport">确认导出</button>
+                    </div>
+                </div>
                 <button class="btn-delete" id="btnBatchDelete" style="display: none;">批量删除</button>
             </div>
         </header>

@@ -13,7 +13,13 @@ const state = {
         startDate: '',
         endDate: ''
     },
-    selectedIds: new Set()  // 跟踪选中的记录ID
+    selectedIds: new Set(),  // 跟踪选中的记录ID
+    exportPanelOpen: false,
+    exportInProgress: false,
+    exportOptions: {
+        includeExcel: true,
+        includeImages: true
+    }
 };
 
 // 图片预览配置常量
@@ -67,6 +73,11 @@ const elements = {
     // 操作
     btnRefresh: document.getElementById('btnRefresh'),
     btnExport: document.getElementById('btnExport'),
+    exportOptionsPanel: document.getElementById('exportOptionsPanel'),
+    exportExcelCheckbox: document.getElementById('exportExcelCheckbox'),
+    exportImagesCheckbox: document.getElementById('exportImagesCheckbox'),
+    btnConfirmExport: document.getElementById('btnConfirmExport'),
+    exportArrow: document.querySelector('.export-arrow'),
 
     // 删除相关
     btnBatchDelete: document.getElementById('btnBatchDelete'),
@@ -82,7 +93,10 @@ function init() {
     elements.btnSearch.addEventListener('click', handleSearch);
     elements.btnReset.addEventListener('click', handleReset);
     elements.btnRefresh.addEventListener('click', () => loadRecords());
-    elements.btnExport.addEventListener('click', handleExport);
+    elements.btnExport.addEventListener('click', toggleExportPanel);
+    elements.exportExcelCheckbox.addEventListener('change', updateConfirmButtonState);
+    elements.exportImagesCheckbox.addEventListener('change', updateConfirmButtonState);
+    elements.btnConfirmExport.addEventListener('click', handleConfirmExport);
 
     elements.btnFirstPage.addEventListener('click', () => goToPage(1));
     elements.btnPrevPage.addEventListener('click', () => goToPage(state.currentPage - 1));
@@ -111,6 +125,9 @@ function init() {
 
     // 更新迁移统计
     updateMigrationStats();
+
+    // 初始化导出按钮状态
+    updateConfirmButtonState();
 
     // 初始化折叠功能
     initCollapsibleCards();
@@ -376,27 +393,152 @@ function handleReset() {
     loadRecords();
 }
 
-// 处理导出
-async function handleExport() {
+// 切换导出面板
+function toggleExportPanel() {
+    state.exportPanelOpen = !state.exportPanelOpen;
+
+    const panel = elements.exportOptionsPanel;
+    const arrow = elements.exportArrow;
+    const btn = elements.btnExport;
+
+    if (state.exportPanelOpen) {
+        panel.style.display = 'block';
+        // 触发重绘以启用动画
+        panel.offsetHeight; // eslint-disable-line no-unused-expressions
+        panel.classList.add('open');
+        arrow.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+    } else {
+        panel.classList.remove('open');
+        arrow.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+
+        setTimeout(() => {
+            if (!state.exportPanelOpen) {
+                panel.style.display = 'none';
+            }
+        }, 250);
+    }
+}
+
+// 关闭导出面板
+function closeExportPanel() {
+    if (state.exportPanelOpen) {
+        toggleExportPanel();
+    }
+}
+
+// 更新确认按钮状态
+function updateConfirmButtonState() {
+    const excelChecked = elements.exportExcelCheckbox.checked;
+    const imagesChecked = elements.exportImagesCheckbox.checked;
+
+    state.exportOptions.includeExcel = excelChecked;
+    state.exportOptions.includeImages = imagesChecked;
+
+    const canExport = (excelChecked || imagesChecked) && !state.exportInProgress;
+    elements.btnConfirmExport.disabled = !canExport;
+}
+
+// 生成带超时的AbortSignal（兼容旧浏览器）
+function createTimeoutSignal(timeoutMs) {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+        return AbortSignal.timeout(timeoutMs);
+    }
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), timeoutMs);
+    return controller.signal;
+}
+
+// 处理确认导出
+async function handleConfirmExport() {
+    if (state.exportInProgress) return;
+
+    const { includeExcel, includeImages } = state.exportOptions;
+
+    if (!includeExcel && !includeImages) {
+        showToast('请至少选择一项导出内容', 'warning');
+        return;
+    }
+
+    state.exportInProgress = true;
+    elements.btnConfirmExport.textContent = '导出中...';
+    elements.btnConfirmExport.disabled = true;
+
+    // 按要求，开始导出后立即关闭面板
+    closeExportPanel();
+    showToast('开始导出，请稍候...', 'success');
+
     try {
-        // 构建查询参数
         const params = new URLSearchParams();
 
         if (state.filters.search) params.append('search', state.filters.search);
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
         if (state.filters.productType) params.append('product_type', state.filters.productType);
-        if (state.filters.status) params.append('status', state.filters.status);  // 新增
-        if (state.filters.logistics && state.filters.logistics !== '全部物流') params.append('logistics', state.filters.logistics);  // 新增:物流筛选
+        if (state.filters.status) params.append('status', state.filters.status);
+        if (state.filters.logistics && state.filters.logistics !== '全部物流') params.append('logistics', state.filters.logistics);
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
-        // 下载ZIP包
-        window.location.href = `/api/admin/export?${params}`;
+        params.append('include_excel', includeExcel.toString());
+        params.append('include_images', includeImages.toString());
 
-        showToast('开始导出...', 'success');
+        const response = await fetch(`/api/admin/export?${params}`, {
+            method: 'GET',
+            signal: createTimeoutSignal(300000) // 5分钟超时
+        });
 
+        if (response.status === 504) {
+            showToast('导出超时，请稍后重试', 'error');
+            return;
+        }
+
+        const isEmpty = response.headers.get('X-Export-Empty') === 'true';
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `导出失败 (${response.status})`);
+        }
+
+        if (isEmpty) {
+            showToast('没有符合条件的记录可导出', 'warning');
+            return;
+        }
+
+        // 获取文件名
+        const disposition = response.headers.get('Content-Disposition');
+        let filename = 'export';
+        if (disposition) {
+            const match = disposition.match(/filename=\"?([^\";\n]+)\"?/);
+            if (match) {
+                filename = match[1];
+            }
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
     } catch (error) {
-        showToast('导出失败: ' + error.message, 'error');
+        if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+            showToast('导出超时，请稍后重试', 'error');
+        } else if (error.message && error.message.includes('NetworkError')) {
+            showToast('导出失败: 网络连接错误', 'error');
+        } else if (error.message && error.message.includes('Failed to fetch')) {
+            showToast('导出失败: 网络连接错误', 'error');
+        } else {
+            showToast('导出失败: ' + error.message, 'error');
+        }
+    } finally {
+        state.exportInProgress = false;
+        elements.btnConfirmExport.textContent = '确认导出';
+        updateConfirmButtonState();
     }
 }
 

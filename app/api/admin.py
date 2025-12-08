@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
+from starlette.background import BackgroundTask
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import asyncio
@@ -10,6 +11,7 @@ import io
 import os
 import zipfile
 import tempfile
+import shutil
 from pathlib import Path
 from openpyxl import Workbook
 from app.core.database import get_db_connection
@@ -175,213 +177,266 @@ async def export_records(
     status: Optional[str] = Query(None, description="状态筛选"),
     start_date: Optional[str] = Query(None, description="开始日期"),
     end_date: Optional[str] = Query(None, description="结束日期"),
-    logistics: Optional[str] = Query(None, description="物流公司筛选")
+    logistics: Optional[str] = Query(None, description="物流公司筛选"),
+    include_excel: bool = Query(True, description="是否包含Excel数据"),
+    include_images: bool = Query(True, description="是否包含图片文件")
 ):
     """
-    导出上传记录为ZIP包（包含Excel表格和所有图片文件）
+    导出上传记录，支持选择性导出Excel和/或图片
 
-    查询参数: 与/records接口相同（不包含分页参数）
-
-    响应: ZIP文件流
+    响应:
+    - Both: ZIP文件 (Excel + images/)
+    - Excel only: 直接.xlsx文件
+    - Images only: ZIP文件 (仅images/)
     """
     import logging
     from app.core.file_manager import FileManager
 
     logger = logging.getLogger(__name__)
-    file_manager = None  # 延迟初始化
+    file_manager = None
+    temp_dir: Optional[str] = None
 
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-
-        # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
-        where_clauses = ["deleted_at IS NULL"]
-        params = []
-
-        if search:
-            where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
-            search_pattern = f"%{search}%"
-            params.extend([search_pattern, search_pattern])
-
-        if doc_type:
-            where_clauses.append("doc_type = ?")
-            params.append(doc_type)
-
-        if product_type:
-            where_clauses.append("product_type = ?")
-            params.append(product_type)
-
-        if status:
-            where_clauses.append("status = ?")
-            params.append(status)
-
-        if start_date:
-            where_clauses.append("DATE(upload_time) >= ?")
-            params.append(start_date)
-
-        if end_date:
-            where_clauses.append("DATE(upload_time) <= ?")
-            params.append(end_date)
-
-        if logistics and logistics != "全部物流":
-            where_clauses.append("logistics = ?")
-            params.append(logistics)
-
-        where_sql = " AND ".join(where_clauses)
-
-        # 动态检测webdav_path字段是否存在（兼容未完成迁移的旧数据库）
-        cursor.execute("PRAGMA table_info(upload_history)")
-        columns = {col[1] for col in cursor.fetchall()}
-        has_webdav_path = "webdav_path" in columns
-        webdav_select = "webdav_path" if has_webdav_path else "NULL as webdav_path"
-
-        # 查询所有匹配记录（包括status、local_file_path、notes和webdav_path）
-        cursor.execute(f"""
-            SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
-                   file_size, status, local_file_path, notes, {webdav_select}
-            FROM upload_history
-            WHERE {where_sql}
-            ORDER BY upload_time DESC
-        """, params)
-
-        rows = cursor.fetchall()
-
-    logger.info(f"[导出] 开始导出上传记录，筛选后记录数={len(rows)}")
-
-    # 创建临时目录和ZIP文件
-    temp_dir = tempfile.mkdtemp()
-    timestamp = get_beijing_now_naive().strftime('%Y%m%d_%H%M%S')
-    zip_filename = f"upload_records_{timestamp}.zip"
-    zip_path = os.path.join(temp_dir, zip_filename)
+    # 参数校验: 至少需要选择一项
+    if not include_excel and not include_images:
+        raise HTTPException(
+            status_code=400,
+            detail="至少选择一项导出内容 (include_excel 或 include_images)"
+        )
 
     try:
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # 生成Excel文件
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # 构建WHERE条件
+            where_clauses = ["deleted_at IS NULL"]
+            params = []
+
+            if search:
+                where_clauses.append("(doc_number LIKE ? OR file_name LIKE ?)")
+                search_pattern = f"%{search}%"
+                params.extend([search_pattern, search_pattern])
+
+            if doc_type:
+                where_clauses.append("doc_type = ?")
+                params.append(doc_type)
+
+            if product_type:
+                where_clauses.append("product_type = ?")
+                params.append(product_type)
+
+            if status:
+                where_clauses.append("status = ?")
+                params.append(status)
+
+            if start_date:
+                where_clauses.append("DATE(upload_time) >= ?")
+                params.append(start_date)
+
+            if end_date:
+                where_clauses.append("DATE(upload_time) <= ?")
+                params.append(end_date)
+
+            if logistics and logistics != "全部物流":
+                where_clauses.append("logistics = ?")
+                params.append(logistics)
+
+            where_sql = " AND ".join(where_clauses)
+
+            # 动态检测webdav_path字段是否存在（兼容未完成迁移的旧数据库）
+            cursor.execute("PRAGMA table_info(upload_history)")
+            columns = {col[1] for col in cursor.fetchall()}
+            has_webdav_path = "webdav_path" in columns
+            webdav_select = "webdav_path" if has_webdav_path else "NULL as webdav_path"
+
+            cursor.execute(f"""
+                SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
+                       file_size, status, local_file_path, notes, {webdav_select}
+                FROM upload_history
+                WHERE {where_sql}
+                ORDER BY upload_time DESC
+            """, params)
+
+            rows = cursor.fetchall()
+
+        logger.info(f"[导出] 查询到 {len(rows)} 条记录, include_excel={include_excel}, include_images={include_images}")
+
+        temp_dir = tempfile.mkdtemp()
+        timestamp = get_beijing_now_naive().strftime('%Y%m%d_%H%M%S')
+        is_empty = len(rows) == 0
+
+        # 生成Excel
+        excel_path = None
+        if include_excel:
             wb = Workbook()
             ws = wb.active
             ws.title = "上传记录"
-
-            # 写入表头（新增"状态"和"备注"列）
             headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态", "备注"]
             ws.append(headers)
 
-            image_local_count = 0
-            image_webdav_count = 0
-            image_missing_count = 0
-            download_jobs = []
-
-            # 写入数据并收集图片文件
             for row in rows:
-                doc_number, doc_type, product_type, business_id, upload_time, file_name, file_size, status, local_file_path, notes, webdav_path = row
-                ws.append([doc_number, doc_type, product_type or '', business_id, upload_time, file_name, file_size, status, notes or ''])
+                doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
+                ws.append([doc_number, doc_type_val, product_type_val or '', business_id, upload_time, file_name, file_size, status_val, notes or ''])
 
-                # 在ZIP中使用相对路径：images/文件名
-                # 优先使用数据库采集的file_name，同步WebDAV存储
-                arcname = os.path.join("images", file_name or (os.path.basename(local_file_path) if local_file_path else f"{business_id}_{doc_number or 'unknown'}"))
+            excel_filename = f"upload_records_{timestamp}.xlsx"
+            excel_path = os.path.join(temp_dir, excel_filename)
+            wb.save(excel_path)
+            logger.info(f"[导出] Excel生成完成: {excel_filename}")
 
-                # 优先使用本地图片文件, 如果不存在则回退到WebDAV
-                has_local_path = bool(local_file_path)
-                local_exists = os.path.exists(local_file_path) if local_file_path else False
+        # 收集图片文件
+        image_files = []
+        if include_images:
+            for row in rows:
+                doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
+                arcname = os.path.join("images", file_name or f"{business_id}_{doc_number or 'unknown'}")
+                local_exists = local_file_path and os.path.exists(local_file_path)
 
                 if local_exists:
-                    zipf.write(local_file_path, arcname=arcname)
-                    image_local_count += 1
-                elif webdav_path:
-                    if has_local_path:
-                        # 数据中存在本地路径但文件缺失, 尝试从WebDAV补偿
-                        logger.info(
-                            f"[导出] 本地图片缺失, 尝试从WebDAV获取 doc_number={doc_number} "
-                            f"business_id={business_id} path={local_file_path} webdav_path={webdav_path}"
-                        )
-
-                    download_jobs.append({
+                    image_files.append({
                         "arcname": arcname,
+                        "local_path": local_file_path,
+                        "webdav_path": None,
+                        "doc_number": doc_number,
+                        "business_id": business_id
+                    })
+                elif webdav_path:
+                    image_files.append({
+                        "arcname": arcname,
+                        "local_path": None,
                         "webdav_path": webdav_path,
                         "doc_number": doc_number,
                         "business_id": business_id
                     })
-                elif has_local_path:
-                    # 只有本地路径信息, 但文件不存在且无webdav_path
-                    image_missing_count += 1
-                    logger.warning(
-                        f"[导出] 本地图片路径存在但文件缺失且无webdav_path doc_number={doc_number} "
-                        f"business_id={business_id} path={local_file_path}"
-                    )
                 else:
-                    # 没有可用的图片信息
-                    image_missing_count += 1
-                    logger.debug(f"[导出] 记录无图片 doc_number={doc_number} business_id={business_id}")
+                    logger.debug(f"[导出] 记录无可用图片 doc_number={doc_number} business_id={business_id}")
 
-            if download_jobs:
-                if file_manager is None:
-                    file_manager = FileManager()
+        # 构建响应
+        if include_excel and include_images:
+            zip_filename = f"upload_records_{timestamp}.zip"
+            zip_path = os.path.join(temp_dir, zip_filename)
 
-                concurrency_limit = 15
-                semaphore = asyncio.Semaphore(concurrency_limit)
-                start_time = time.monotonic()
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                zipf.write(excel_path, arcname=f"upload_records_{timestamp}.xlsx")
 
-                logger.info(
-                    f"[导出] 开始并发下载WebDAV文件 count={len(download_jobs)} 并发={concurrency_limit}"
+                image_local_count, image_webdav_count, image_missing_count = await _add_images_to_zip(
+                    zipf, image_files, file_manager, logger
                 )
 
-                async def download_and_write(job: Dict[str, Any]) -> bool:
-                    async with semaphore:
-                        try:
-                            file_content = await file_manager.get_file(job["webdav_path"])
-                            zipf.writestr(job["arcname"], file_content)
-                            return True
-                        except Exception as e:  # noqa: BLE001
-                            logger.warning(
-                                f"[导出] WebDAV图片获取失败 doc_number={job['doc_number']} "
-                                f"business_id={job['business_id']} webdav_path={job['webdav_path']} 错误={str(e)}"
-                            )
-                            return False
+                if image_local_count == 0 and image_webdav_count == 0:
+                    zipf.writestr(zipfile.ZipInfo("images/"), b"")
 
-                download_results = await asyncio.gather(
-                    *(download_and_write(job) for job in download_jobs)
+            logger.info(f"[导出] ZIP打包完成: {zip_filename}")
+
+            response = FileResponse(
+                path=zip_path,
+                media_type="application/zip",
+                filename=zip_filename,
+                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True)
+            )
+            if is_empty:
+                response.headers["X-Export-Empty"] = "true"
+            return response
+
+        if include_excel and not include_images:
+            response = FileResponse(
+                path=excel_path,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=f"upload_records_{timestamp}.xlsx",
+                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True)
+            )
+            if is_empty:
+                response.headers["X-Export-Empty"] = "true"
+            return response
+
+        if not include_excel and include_images:
+            zip_filename = f"images_{timestamp}.zip"
+            zip_path = os.path.join(temp_dir, zip_filename)
+
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                image_local_count, image_webdav_count, image_missing_count = await _add_images_to_zip(
+                    zipf, image_files, file_manager, logger
                 )
 
-                webdav_success = sum(1 for result in download_results if result)
-                webdav_failed = len(download_results) - webdav_success
-                image_webdav_count += webdav_success
-                image_missing_count += webdav_failed
-
-                elapsed = time.monotonic() - start_time
-                logger.info(
-                    f"[导出] 并发下载完成 成功={webdav_success} 失败={webdav_failed} "
-                    f"耗时={elapsed:.2f}s"
-                )
+                if image_local_count == 0 and image_webdav_count == 0:
+                    zipf.writestr(zipfile.ZipInfo("images/"), b"")
 
             logger.info(
-                f"[导出] 图片打包完成: 本地={image_local_count}, WebDAV={image_webdav_count}, "
-                f"缺失={image_missing_count}"
+                f"[导出] 图片ZIP打包完成: {zip_filename}, 本地={image_local_count}, WebDAV={image_webdav_count}, 缺失={image_missing_count}"
             )
 
-            # 如果没有任何图片, 也创建一个空的 images/ 目录, 保持ZIP结构一致
-            if image_local_count == 0 and image_webdav_count == 0:
-                zipf.writestr(zipfile.ZipInfo("images/"), b"")
+            response = FileResponse(
+                path=zip_path,
+                media_type="application/zip",
+                filename=zip_filename,
+                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True)
+            )
+            if is_empty or (image_local_count == 0 and image_webdav_count == 0):
+                response.headers["X-Export-Empty"] = "true"
+            return response
 
-            # 保存Excel到临时文件
-            excel_temp_path = os.path.join(temp_dir, f"upload_records_{timestamp}.xlsx")
-            wb.save(excel_temp_path)
+    except HTTPException:
+        # 不吞掉明确的HTTP错误
+        raise
+    except Exception as e:
+        logger.error(f"[导出] 导出失败: {str(e)}", exc_info=True)
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
-            # 添加Excel文件到ZIP
-            zipf.write(excel_temp_path, arcname=f"upload_records_{timestamp}.xlsx")
-
-        # 返回ZIP文件
-        return FileResponse(
-            path=zip_path,
-            media_type="application/zip",
-            filename=zip_filename,
-            background=None  # 文件下载后不自动删除，需要手动清理
-        )
-
-    except Exception as e:  # noqa: BLE001
-        # 清理临时文件
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-        if os.path.exists(temp_dir):
-            os.rmdir(temp_dir)
+        if "Excel" in str(e) or "Workbook" in str(e):
+            raise HTTPException(status_code=500, detail="Excel文件生成失败")
+        if "ZIP" in str(e) or "zipfile" in str(e):
+            raise HTTPException(status_code=500, detail="压缩文件创建失败")
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+async def _add_images_to_zip(zipf, image_files, file_manager, logger):
+    """将图片添加到ZIP的辅助函数，支持本地文件和WebDAV下载"""
+    from app.core.file_manager import FileManager
+
+    image_local_count = 0
+    image_webdav_count = 0
+    image_missing_count = 0
+    download_jobs = []
+
+    for img in image_files:
+        if img["local_path"]:
+            try:
+                zipf.write(img["local_path"], arcname=img["arcname"])
+                image_local_count += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[导出] 本地图片添加失败: {img['arcname']}, 错误: {e}")
+                image_missing_count += 1
+        elif img["webdav_path"]:
+            download_jobs.append(img)
+        else:
+            image_missing_count += 1
+
+    if download_jobs:
+        if file_manager is None:
+            file_manager = FileManager()
+
+        concurrency_limit = 15
+        semaphore = asyncio.Semaphore(concurrency_limit)
+
+        async def download_and_write(job):
+            async with semaphore:
+                try:
+                    file_content = await file_manager.get_file(job["webdav_path"])
+                    zipf.writestr(job["arcname"], file_content)
+                    return True
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        f"[导出] WebDAV图片获取失败 doc_number={job['doc_number']} "
+                        f"webdav_path={job['webdav_path']} 错误={str(e)}"
+                    )
+                    return False
+
+        results = await asyncio.gather(*(download_and_write(job) for job in download_jobs))
+        webdav_success = sum(1 for r in results if r)
+        webdav_failed = len(results) - webdav_success
+        image_webdav_count += webdav_success
+        image_missing_count += webdav_failed
+
+    return image_local_count, image_webdav_count, image_missing_count
 
 
 @router.get("/statistics")
