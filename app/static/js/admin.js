@@ -484,47 +484,10 @@ async function handleConfirmExport() {
         params.append('include_excel', includeExcel.toString());
         params.append('include_images', includeImages.toString());
 
-        const response = await fetch(`/api/admin/export?${params}`, {
-            method: 'GET',
-            signal: createTimeoutSignal(300000) // 5分钟超时
-        });
-
-        if (response.status === 504) {
-            showToast('导出超时，请稍后重试', 'error');
-            return;
-        }
-
-        const isEmpty = response.headers.get('X-Export-Empty') === 'true';
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || `导出失败 (${response.status})`);
-        }
-
-        if (isEmpty) {
-            showToast('没有符合条件的记录可导出', 'warning');
-            return;
-        }
-
-        // 获取文件名
-        const disposition = response.headers.get('Content-Disposition');
-        let filename = 'export';
-        if (disposition) {
-            const match = disposition.match(/filename=\"?([^\";\n]+)\"?/);
-            if (match) {
-                filename = match[1];
-            }
-        }
-
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+        // 使用新标签页下载，避免 blob 内存问题导致大文件卡住
+        const downloadUrl = `/api/admin/export?${params}`;
+        window.open(downloadUrl, '_blank');
+        showToast('导出已在新标签页开始，请等待下载完成', 'success');
     } catch (error) {
         if (error.name === 'TimeoutError' || error.name === 'AbortError') {
             showToast('导出超时，请稍后重试', 'error');
