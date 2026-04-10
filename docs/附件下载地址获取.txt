@@ -1,0 +1,54 @@
+供应链获取附件下载地址
+发布时间:2024-10-31 22:13:16
+获取供应链单据的附件下载地址
+1. 请求说明
+请求域名	动态域名，获取方式详见 获取租户所在数据中心域名
+请求地址	/yonbip/scm/api/getDownLoadUrl
+请求方式	POST
+ContentType	application/json
+应用场景	开放API
+API类别	
+事务和幂等性	无
+用户身份	支持传递普通用户身份，详细说明见开放平台用户认证接入规范
+2. 请求参数
+只看必填项
+名称	类型	参数位置	必填	描述
+access_token	string	query	是	调用方应用token
+企业自建获取token
+服务商获取token
+Body参数
+名称	类型	数组	必填	描述
+billCode	string	否	是	单据编号    示例: QTRK20231009552748
+businessType	string	否	是	单据标识，销售管理单据使用：yonbip-scm-scmsa，库存管理、条码管理单据使用：yonbip-scm-stock，供应链费用、销售报价、销售合同单据使用：yonbip-scm-scmmp，采购管理单据使用：yonbip-scm-pu    示例: yonbip-scm-scmsa
+businessid	string	否	是	附件关联ID，一般为单据ID，或者为扩展字段id    示例: 1836660026080493581
+3. 请求示例
+Url: /yonbip/scm/api/getDownLoadUrl?access_token=访问令牌
+Body: [{
+	"billCode": "QTRK20231009552748",
+	"businessType": "yonbip-scm-scmsa",
+	"businessid": "1836660026080493581"
+}]
+4. 返回值参数
+名称	类型	数组	描述
+code	string	否	状态
+message	string	否	信息
+data	object	否	返回数据
+billCode	string	否	单据编号
+downLoadUrl	string	否	下载地址
+businessid	string	否	附件关联id
+filedInfos	object	否	附件信息
+5. 正确返回示例
+{
+	"code": "200",
+	"message": "操作成功",
+	"data": {
+		"billCode": "QTRK20231009552748",
+		"downLoadUrl": "https://bip-daily.yonyoucloud.com/iuap-apcom-file/rest/v1/file/list/zip/stream?fromDevice=sdk&token=1&fileIds=2,6&isWaterMar=false",
+		"businessid": "1878196998374948873",
+		"filedInfos": {
+			"filename": "1.docx",
+			"filedid": "657671af3ac2c74833883341",
+			"token": "iuapFileTokenc35e8550-d1f3-4b16-921c-10d0b592xxxx"
+		}
+	}
+}
