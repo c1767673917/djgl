@@ -1,3 +1,5 @@
+const DEFAULT_ADMIN_UPLOAD_TYPE = '物流';
+
 // 全局状态
 const state = {
     currentPage: 1,
@@ -6,7 +8,7 @@ const state = {
     totalRecords: 0,
     filters: {
         search: '',
-        uploadType: '',  // 新增:业务类型筛选(物流/仓库);空表示全部业务
+        uploadType: DEFAULT_ADMIN_UPLOAD_TYPE,  // 默认显示物流数据
         docType: '',
         productType: '',
         logistics: '',  // 新增:物流筛选
@@ -91,6 +93,10 @@ const elements = {
 
 // 初始化
 function init() {
+    if (elements.uploadTypeFilter) {
+        elements.uploadTypeFilter.value = DEFAULT_ADMIN_UPLOAD_TYPE;
+    }
+
     // 绑定事件
     elements.btnSearch.addEventListener('click', handleSearch);
     elements.btnReset.addEventListener('click', handleReset);
@@ -373,7 +379,7 @@ function handleSearch() {
 function handleReset() {
     elements.searchInput.value = '';
     if (elements.uploadTypeFilter) {
-        elements.uploadTypeFilter.value = '';  // 新增:重置业务类型为"全部业务"
+        elements.uploadTypeFilter.value = DEFAULT_ADMIN_UPLOAD_TYPE;  // 重置后仍显示物流数据
     }
     elements.docTypeFilter.value = '';
     elements.productTypeFilter.value = '';
@@ -388,7 +394,7 @@ function handleReset() {
 
     state.filters = {
         search: '',
-        uploadType: '',  // 新增:重置业务类型为"全部业务"
+        uploadType: DEFAULT_ADMIN_UPLOAD_TYPE,
         docType: '',
         productType: '',
         status: '',  // 新增
