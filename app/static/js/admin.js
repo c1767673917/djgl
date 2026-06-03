@@ -6,6 +6,7 @@ const state = {
     totalRecords: 0,
     filters: {
         search: '',
+        uploadType: '',  // 新增:业务类型筛选(物流/仓库);空表示全部业务
         docType: '',
         productType: '',
         logistics: '',  // 新增:物流筛选
@@ -47,6 +48,7 @@ const elements = {
 
     // 筛选
     searchInput: document.getElementById('searchInput'),
+    uploadTypeFilter: document.getElementById('uploadTypeFilter'),  // 新增:业务类型筛选
     docTypeFilter: document.getElementById('docTypeFilter'),
     productTypeFilter: document.getElementById('productTypeFilter'),
     statusFilter: document.getElementById('statusFilter'),  // 新增
@@ -200,6 +202,7 @@ async function loadRecords() {
         });
 
         if (state.filters.search) params.append('search', state.filters.search);
+        if (state.filters.uploadType) params.append('upload_type', state.filters.uploadType);  // 新增:仅在选择具体业务类型时携带(全部业务时省略)
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
         if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.status) params.append('status', state.filters.status);  // 新增
@@ -247,6 +250,7 @@ function renderTable(records) {
                 >
             </td>
             <td>${record.doc_number || '-'}</td>
+            <td><span class="upload-type-tag upload-type-${record.upload_type === '仓库' ? 'warehouse' : 'logistics'}">${record.upload_type || '物流'}</span></td>
             <td>${record.doc_type || '-'}</td>
             <td>${record.product_type || ''}</td>
             <td>${formatDateTime(record.upload_time)}</td>
@@ -354,6 +358,7 @@ function renderStatusBadge(status, errorMessage) {
 // 处理搜索
 function handleSearch() {
     state.filters.search = elements.searchInput.value.trim();
+    state.filters.uploadType = elements.uploadTypeFilter ? elements.uploadTypeFilter.value : '';  // 新增:业务类型筛选
     state.filters.docType = elements.docTypeFilter.value;
     state.filters.productType = elements.productTypeFilter.value;
     state.filters.status = elements.statusFilter ? elements.statusFilter.value : '';  // 新增
@@ -368,6 +373,9 @@ function handleSearch() {
 // 处理重置
 function handleReset() {
     elements.searchInput.value = '';
+    if (elements.uploadTypeFilter) {
+        elements.uploadTypeFilter.value = '';  // 新增:重置业务类型为"全部业务"
+    }
     elements.docTypeFilter.value = '';
     elements.productTypeFilter.value = '';
     if (elements.statusFilter) {
@@ -381,6 +389,7 @@ function handleReset() {
 
     state.filters = {
         search: '',
+        uploadType: '',  // 新增:重置业务类型为"全部业务"
         docType: '',
         productType: '',
         status: '',  // 新增
@@ -474,6 +483,7 @@ async function handleConfirmExport() {
         const params = new URLSearchParams();
 
         if (state.filters.search) params.append('search', state.filters.search);
+        if (state.filters.uploadType) params.append('upload_type', state.filters.uploadType);  // 新增:仅在选择具体业务类型时携带(全部业务时省略)
         if (state.filters.docType) params.append('doc_type', state.filters.docType);
         if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.status) params.append('status', state.filters.status);

@@ -107,6 +107,10 @@ def init_database():
         if 'logistics' not in columns:
             cursor.execute("ALTER TABLE upload_history ADD COLUMN logistics TEXT DEFAULT NULL")
 
+        # 添加上传业务类型字段 (物流/仓库)
+        if 'upload_type' not in columns:
+            cursor.execute("ALTER TABLE upload_history ADD COLUMN upload_type VARCHAR(20)")
+
         # 创建索引
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_business_id
@@ -159,6 +163,17 @@ def init_database():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_logistics
             ON upload_history(logistics)
+        """)
+
+        # 上传业务类型索引 (优化物流/仓库筛选)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_upload_type
+            ON upload_history(upload_type)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_upload_type_upload_time
+            ON upload_history(upload_type, upload_time)
         """)
 
         conn.commit()

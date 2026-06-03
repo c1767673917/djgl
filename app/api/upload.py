@@ -10,6 +10,12 @@ from app.core.yonyou_client import YonYouClient
 from app.core.database import get_db_connection
 from app.core.file_manager import FileManager
 from app.core.timezone import get_beijing_now_naive
+from app.core.upload_types import (
+    DEFAULT_UPLOAD_TYPE,
+    UPLOAD_TYPE_LOGISTICS,
+    UPLOAD_TYPE_WAREHOUSE,
+    VALID_UPLOAD_TYPES,
+)
 from app.models.upload_history import UploadHistory
 
 router = APIRouter()
@@ -69,6 +75,17 @@ def save_file_locally(file_content: bytes, file_path: str) -> None:
     # 保存文件
     with open(file_path, 'wb') as f:
         f.write(file_content)
+
+
+def normalize_upload_type(upload_type: Optional[str]) -> str:
+    """Normalize and validate upload business type."""
+    normalized = (upload_type or "").strip() or DEFAULT_UPLOAD_TYPE
+    if normalized not in VALID_UPLOAD_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"upload_type必须为以下值之一: {', '.join(sorted(VALID_UPLOAD_TYPES))}"
+        )
+    return normalized
 
 
 async def background_upload_to_yonyou(
@@ -284,6 +301,138 @@ async def background_upload_to_yonyou(
             print(f"更新失败状态时出错: {str(inner_e)}")
 
 
+async def background_save_warehouse_upload(
+    file_content: bytes,
+    new_filename: str,
+    local_file_path: str,
+    record_id: int
+):
+    """后台任务：仓库上传仅保存到应用存储，不调用用友云。"""
+    webdav_result = None
+    storage_success = False
+    error_detail = None
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE upload_history
+                SET status = 'uploading', updated_at = ?
+                WHERE id = ?
+            """, (get_beijing_now_naive().isoformat(), record_id))
+            conn.commit()
+    except Exception as e:
+        print(f"更新仓库uploading状态失败: {str(e)}")
+
+    try:
+        try:
+            webdav_result = await file_manager.save_file(file_content, new_filename)
+            storage_success = bool(webdav_result and webdav_result.get('success'))
+            if storage_success:
+                print(f"仓库文件保存成功: {webdav_result.get('webdav_path')}")
+            else:
+                error_detail = webdav_result.get('error', '应用存储保存失败') if webdav_result else '应用存储保存失败'
+                print(f"仓库文件保存失败: {error_detail}")
+        except Exception as e:
+            webdav_result = {'success': False, 'error': str(e)}
+            error_detail = str(e)
+            print(f"仓库文件保存异常: {error_detail}")
+
+        if not storage_success and local_file_path:
+            try:
+                save_file_locally(file_content, local_file_path)
+                storage_success = True
+                print(f"仓库文件本地保存成功: {local_file_path}")
+            except Exception as e:
+                error_detail = str(e)
+                print(f"仓库文件本地保存失败: {error_detail}")
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            now_iso = get_beijing_now_naive().isoformat()
+
+            if storage_success:
+                cache_expiry_time = None
+                if webdav_result and webdav_result.get('success') and webdav_result.get('is_cached'):
+                    cache_expiry_time = (get_beijing_now_naive() + timedelta(days=settings.CACHE_DAYS)).isoformat()
+
+                cursor.execute("""
+                    UPDATE upload_history
+                    SET status = 'success',
+                        yonyou_file_id = NULL,
+                        logistics = NULL,
+                        error_code = NULL,
+                        error_message = NULL,
+                        webdav_path = ?,
+                        is_cached = ?,
+                        cache_expiry_time = ?,
+                        retry_count = 0,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (
+                    webdav_result.get('webdav_path') if webdav_result and webdav_result.get('success') else None,
+                    webdav_result.get('is_cached', False) if webdav_result and webdav_result.get('success') else False,
+                    cache_expiry_time,
+                    now_iso,
+                    record_id
+                ))
+                conn.commit()
+
+                if webdav_result and webdav_result.get('success'):
+                    try:
+                        cursor.execute("""
+                            INSERT INTO file_metadata
+                            (filename, webdav_path, local_cache_path, upload_time, file_size,
+                             is_cached, last_access_time, webdav_etag, is_synced, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            new_filename,
+                            webdav_result.get('webdav_path'),
+                            webdav_result.get('local_cache_path'),
+                            webdav_result.get('upload_time'),
+                            webdav_result.get('file_size'),
+                            webdav_result.get('is_cached', False),
+                            now_iso,
+                            webdav_result.get('webdav_etag'),
+                            webdav_result.get('is_synced', False),
+                            now_iso,
+                            now_iso
+                        ))
+                        conn.commit()
+                    except Exception as e:
+                        print(f"插入仓库文件元数据失败: {str(e)}")
+            else:
+                cursor.execute("""
+                    UPDATE upload_history
+                    SET status = 'failed',
+                        error_code = 'WAREHOUSE_STORAGE_ERROR',
+                        error_message = ?,
+                        yonyou_file_id = NULL,
+                        logistics = NULL,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (error_detail or '仓库文件保存失败', now_iso, record_id))
+                conn.commit()
+    except Exception as e:
+        print(f"仓库后台保存任务异常: {str(e)}")
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE upload_history
+                    SET status = 'failed',
+                        error_code = 'WAREHOUSE_STORAGE_ERROR',
+                        error_message = ?,
+                        yonyou_file_id = NULL,
+                        logistics = NULL,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (str(e), get_beijing_now_naive().isoformat(), record_id))
+                conn.commit()
+        except Exception as inner_e:
+            print(f"更新仓库失败状态时出错: {str(inner_e)}")
+
+
 @router.post("/upload")
 async def upload_files(
     background_tasks: BackgroundTasks,
@@ -291,6 +440,7 @@ async def upload_files(
     doc_number: str = Form(..., description="单据编号"),
     doc_type: str = Form(..., description="单据类型"),
     product_type: Optional[str] = Form(None, description="产品类型(如:油脂/快消)"),
+    upload_type: Optional[str] = Form(None, description="上传业务类型: 物流/仓库"),
     files: List[UploadFile] = File(...)
 ):
     """
@@ -337,6 +487,8 @@ async def upload_files(
             status_code=400,
             detail=f"doc_type必须为以下值之一: {', '.join(valid_doc_types)}"
         )
+
+    upload_type_value = normalize_upload_type(upload_type)
 
     # 获取映射后的businessType
     business_type = DOC_TYPE_TO_BUSINESS_TYPE.get(doc_type, settings.YONYOU_BUSINESS_TYPE)
@@ -391,8 +543,8 @@ async def upload_files(
                 INSERT INTO upload_history
                 (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
                  upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
-                 local_file_path, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 local_file_path, upload_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 business_id,
                 doc_number,
@@ -408,6 +560,7 @@ async def upload_files(
                 None,
                 0,
                 local_file_path,
+                upload_type_value,
                 upload_time_str,
                 upload_time_str
             ))
@@ -416,22 +569,32 @@ async def upload_files(
             conn.commit()
 
         # 添加后台任务
-        background_tasks.add_task(
-            background_upload_to_yonyou,
-            file_content=file_content,
-            new_filename=new_filename,
-            business_id=business_id,
-            business_type=business_type,
-            local_file_path=local_file_path,
-            record_id=record_id
-        )
+        if upload_type_value == UPLOAD_TYPE_LOGISTICS:
+            background_tasks.add_task(
+                background_upload_to_yonyou,
+                file_content=file_content,
+                new_filename=new_filename,
+                business_id=business_id,
+                business_type=business_type,
+                local_file_path=local_file_path,
+                record_id=record_id
+            )
+        elif upload_type_value == UPLOAD_TYPE_WAREHOUSE:
+            background_tasks.add_task(
+                background_save_warehouse_upload,
+                file_content=file_content,
+                new_filename=new_filename,
+                local_file_path=local_file_path,
+                record_id=record_id
+            )
 
         records.append({
             "id": record_id,
             "file_name": new_filename,
             "original_name": upload_file.filename,
             "status": "pending",
-            "file_size": file_size
+            "file_size": file_size,
+            "upload_type": upload_type_value
         })
 
     # 立即返回响应
@@ -458,8 +621,8 @@ def save_upload_history(history: UploadHistory):
             INSERT INTO upload_history
             (business_id, doc_number, doc_type, product_type, file_name, file_size, file_extension,
              upload_time, status, error_code, error_message, yonyou_file_id, retry_count,
-             local_file_path, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             local_file_path, upload_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             history.business_id,
             history.doc_number,
@@ -475,6 +638,7 @@ def save_upload_history(history: UploadHistory):
             history.yonyou_file_id,
             history.retry_count,
             history.local_file_path,
+            history.upload_type,
             upload_time_str,
             upload_time_str
         ))

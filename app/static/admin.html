@@ -161,8 +161,14 @@
                     placeholder="搜索单据编号或文件名"
                 >
 
-                <select id="docTypeFilter" class="filter-select">
-                    <option value="">全部类型</option>
+                <select id="uploadTypeFilter" class="filter-select" title="业务类型">
+                    <option value="">全部业务</option>
+                    <option value="物流">物流</option>
+                    <option value="仓库">仓库</option>
+                </select>
+
+                <select id="docTypeFilter" class="filter-select" title="单据类型">
+                    <option value="">全部单据类型</option>
                     <option value="销售">销售</option>
                     <option value="转库">转库</option>
                     <option value="其他">其他</option>
@@ -219,6 +225,7 @@
                             <input type="checkbox" id="selectAll" title="全选">
                         </th>
                         <th>单据编号</th>
+                        <th width="70">业务类型</th>
                         <th>单据类型</th>
                         <th>产品类型</th>
                         <th>上传时间</th>

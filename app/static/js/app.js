@@ -4,6 +4,7 @@ const state = {
     docNumber: '',
     docType: '',
     productType: '',  // 产品类型(如:油脂/快消)
+    uploadType: '',  // 上传业务类型: 物流/仓库 (默认未选择)
     selectedFiles: [],
     maxFiles: 10,
     maxFileSize: 10 * 1024 * 1024, // 10MB
@@ -15,6 +16,11 @@ const state = {
 // DOM元素
 const elements = {
     businessIdDisplay: document.getElementById('businessIdDisplay'),
+    uploadTypeDisplay: document.getElementById('uploadTypeDisplay'),
+    uploadTypeValue: document.getElementById('uploadTypeValue'),
+    uploadTypeSection: document.getElementById('uploadTypeSection'),
+    btnTypeLogistics: document.getElementById('btnTypeLogistics'),
+    btnTypeWarehouse: document.getElementById('btnTypeWarehouse'),
     uploadArea: document.getElementById('uploadArea'),
     fileInput: document.getElementById('fileInput'),
     previewSection: document.getElementById('previewSection'),
@@ -65,12 +71,52 @@ function init() {
     setThemeByDocType(state.docType);
 
     // 绑定事件
+    elements.btnTypeLogistics.addEventListener('click', () => selectUploadType('物流'));
+    elements.btnTypeWarehouse.addEventListener('click', () => selectUploadType('仓库'));
     elements.uploadArea.addEventListener('click', () => elements.fileInput.click());
     elements.fileInput.addEventListener('change', handleFileSelect);
     elements.btnClear.addEventListener('click', clearFiles);
     elements.btnUpload.addEventListener('click', uploadFiles);
     elements.btnHistory.addEventListener('click', showHistory);
     elements.btnCloseModal.addEventListener('click', () => elements.historyModal.style.display = 'none');
+
+    // 初始锁定上传控件,直到用户选择业务类型
+    updateUploadControlsAvailability();
+}
+
+// 选择上传业务类型(物流/仓库)
+function selectUploadType(uploadType) {
+    // 上传进行中时禁止切换
+    if (state.uploading) {
+        return;
+    }
+
+    // 切换类型时清空已选文件和验证状态,避免跨类型误提交
+    if (state.uploadType && state.uploadType !== uploadType) {
+        clearFiles();
+    }
+
+    state.uploadType = uploadType;
+
+    // 高亮选中按钮
+    elements.btnTypeLogistics.classList.toggle('active', uploadType === '物流');
+    elements.btnTypeWarehouse.classList.toggle('active', uploadType === '仓库');
+
+    // 在单据信息旁显示已选业务类型
+    elements.uploadTypeValue.textContent = uploadType;
+    elements.uploadTypeDisplay.style.display = 'block';
+
+    updateUploadControlsAvailability();
+}
+
+// 根据是否已选择业务类型启用/禁用上传控件
+function updateUploadControlsAvailability() {
+    const enabled = !!state.uploadType;
+
+    // 选择类型前,锁定文件选择/预览/上传控件
+    elements.uploadArea.classList.toggle('disabled', !enabled);
+    elements.fileInput.disabled = !enabled;
+    elements.btnUpload.disabled = !enabled || state.selectedFiles.length === 0;
 }
 
 // 根据单据类型设置主题
@@ -92,6 +138,13 @@ function setThemeByDocType(docType) {
 
 // 文件选择处理
 async function handleFileSelect(e) {
+    // 必须先选择业务类型
+    if (!state.uploadType) {
+        showToast('请先选择业务类型(物流/仓库)', 'error');
+        e.target.value = '';
+        return;
+    }
+
     const files = Array.from(e.target.files);
 
     // 验证文件数量
@@ -186,7 +239,8 @@ function updatePreview() {
     }
 
     elements.previewSection.style.display = 'block';
-    elements.btnUpload.disabled = false;
+    // 仅当已选择业务类型时才允许上传
+    elements.btnUpload.disabled = !state.uploadType;
     elements.selectedCount.textContent = state.selectedFiles.length;
 
     // 清空预览列表
@@ -263,6 +317,7 @@ async function uploadFiles() {
     formData.append('business_id', state.businessId);
     formData.append('doc_number', state.docNumber);
     formData.append('doc_type', state.docType);
+    formData.append('upload_type', state.uploadType);  // 上传业务类型: 物流/仓库
     if (state.productType) {
         formData.append('product_type', state.productType);  // 添加产品类型参数(如果存在)
     }
@@ -308,8 +363,14 @@ async function uploadFiles() {
         elements.progressBar.style.width = '100%';
         elements.progressText.textContent = `${result.total}/${result.total}`;
 
-        // 显示结果提示
-        showToast(`已提交${result.total}张图片，正在后台上传到用友云...`, 'success');
+        // 显示结果提示(按业务类型区分文案)
+        if (state.uploadType === '仓库') {
+            // 仓库:仅保存在应用中,不上传到用友云
+            showToast(`已提交${result.total}张图片，正在后台保存到应用中...`, 'success');
+        } else {
+            // 物流:保留原用友云上传文案
+            showToast(`已提交${result.total}张图片，正在后台上传到用友云...`, 'success');
+        }
 
         // 3秒后清空并提示查看历史
         setTimeout(() => {
@@ -328,8 +389,16 @@ async function uploadFiles() {
 
 // 显示历史记录
 async function showHistory() {
+    // 必须先选择业务类型,避免混淆物流/仓库历史
+    if (!state.uploadType) {
+        showToast('请先选择业务类型(物流/仓库)', 'error');
+        return;
+    }
+
     try {
-        const response = await fetch(`/api/history/${state.businessId}`);
+        // 始终携带所选业务类型,确保物流/仓库历史互不混淆
+        const historyUrl = `/api/history/${state.businessId}?upload_type=${encodeURIComponent(state.uploadType)}`;
+        const response = await fetch(historyUrl);
         const result = await response.json();
 
         if (!response.ok) {

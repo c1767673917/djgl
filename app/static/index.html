@@ -13,7 +13,17 @@
         <header class="header">
             <h1>单据上传</h1>
             <p class="business-id">单据信息: <span id="businessIdDisplay">--</span></p>
+            <p class="business-id upload-type-display" id="uploadTypeDisplay" style="display: none;">业务类型: <span id="uploadTypeValue">--</span></p>
         </header>
+
+        <!-- 业务类型选择 -->
+        <div class="upload-type-section" id="uploadTypeSection">
+            <p class="upload-type-tip">请先选择本次上传的业务类型</p>
+            <div class="upload-type-options">
+                <button class="upload-type-btn" id="btnTypeLogistics" data-type="物流">物流</button>
+                <button class="upload-type-btn" id="btnTypeWarehouse" data-type="仓库">仓库</button>
+            </div>
+        </div>
 
         <!-- 上传区域 -->
         <div class="upload-section">

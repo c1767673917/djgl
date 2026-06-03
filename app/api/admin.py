@@ -17,9 +17,45 @@ from openpyxl import Workbook
 from app.core.database import get_db_connection
 from app.core.config import get_settings
 from app.core.timezone import get_beijing_now_naive
+from app.core.upload_types import (
+    DEFAULT_UPLOAD_TYPE,
+    UPLOAD_TYPE_LOGISTICS,
+    UPLOAD_TYPE_WAREHOUSE,
+    VALID_UPLOAD_TYPES,
+)
 
 settings = get_settings()
 router = APIRouter()
+
+
+def normalize_upload_type_filter(upload_type: Optional[str]) -> Optional[str]:
+    """Normalize optional upload business type query filter."""
+    normalized = (upload_type or "").strip()
+    if not normalized:
+        return None
+    if normalized not in VALID_UPLOAD_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"upload_type必须为以下值之一: {', '.join(sorted(VALID_UPLOAD_TYPES))}"
+        )
+    return normalized
+
+
+def append_upload_type_filter(
+    where_clauses: List[str],
+    params: List[Any],
+    upload_type: Optional[str],
+    has_upload_type: bool = True
+) -> None:
+    """Append upload_type SQL predicate using legacy logistics compatibility."""
+    if upload_type == UPLOAD_TYPE_LOGISTICS and has_upload_type:
+        where_clauses.append("COALESCE(NULLIF(upload_type, ''), ?) = ?")
+        params.extend([DEFAULT_UPLOAD_TYPE, UPLOAD_TYPE_LOGISTICS])
+    elif upload_type == UPLOAD_TYPE_WAREHOUSE and has_upload_type:
+        where_clauses.append("upload_type = ?")
+        params.append(UPLOAD_TYPE_WAREHOUSE)
+    elif upload_type == UPLOAD_TYPE_WAREHOUSE:
+        where_clauses.append("1 = 0")
 
 
 @router.get("/records")
@@ -32,7 +68,8 @@ async def get_admin_records(
     status: Optional[str] = Query(None, description="状态筛选（pending/uploading/success/failed）"),
     start_date: Optional[str] = Query(None, description="开始日期（YYYY-MM-DD）"),
     end_date: Optional[str] = Query(None, description="结束日期（YYYY-MM-DD）"),
-    logistics: Optional[str] = Query(None, description="物流公司筛选")
+    logistics: Optional[str] = Query(None, description="物流公司筛选"),
+    upload_type: Optional[str] = Query(None, description="上传业务类型筛选")
 ) -> Dict[str, Any]:
     """
     获取上传记录列表（管理页面）
@@ -47,6 +84,7 @@ async def get_admin_records(
     - start_date: 开始日期（格式：YYYY-MM-DD）
     - end_date: 结束日期（格式：YYYY-MM-DD）
     - logistics: 物流公司筛选（'全部物流'表示不过滤）
+    - upload_type: 上传业务类型筛选（物流/仓库）
 
     响应格式:
     {
@@ -57,8 +95,19 @@ async def get_admin_records(
         "records": [...]
     }
     """
+    upload_type_filter = normalize_upload_type_filter(upload_type)
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
+
+        cursor.execute("PRAGMA table_info(upload_history)")
+        columns = {col[1] for col in cursor.fetchall()}
+        has_upload_type = "upload_type" in columns
+        upload_type_select = (
+            "COALESCE(NULLIF(upload_type, ''), ?) AS upload_type"
+            if has_upload_type
+            else "? AS upload_type"
+        )
 
         # 构建WHERE条件（移除硬编码的status过滤，支持动态筛选）
         where_clauses = ["deleted_at IS NULL"]
@@ -93,6 +142,8 @@ async def get_admin_records(
             where_clauses.append("logistics = ?")
             params.append(logistics)
 
+        append_upload_type_filter(where_clauses, params, upload_type_filter, has_upload_type)
+
         where_sql = " AND ".join(where_clauses)
 
         # 查询总记录数
@@ -106,12 +157,13 @@ async def get_admin_records(
         # 查询分页数据（包含status、error_code、checked和notes字段）
         cursor.execute(f"""
             SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
-                   upload_time, status, error_code, error_message, checked, notes, logistics
+                   upload_time, status, error_code, error_message, checked, notes, logistics,
+                   {upload_type_select}
             FROM upload_history
             WHERE {where_sql}
             ORDER BY upload_time DESC
             LIMIT ? OFFSET ?
-        """, params + [page_size, offset])
+        """, [DEFAULT_UPLOAD_TYPE] + params + [page_size, offset])
 
         rows = cursor.fetchall()
 
@@ -132,7 +184,8 @@ async def get_admin_records(
                 "error_message": row[10],
                 "checked": bool(row[11]),  # SQLite INTEGER转Python布尔值
                 "notes": row[12],  # 新增备注字段
-                "logistics": row[13]
+                "logistics": row[13],
+                "upload_type": row[14]
             })
 
         return {
@@ -178,6 +231,7 @@ async def export_records(
     start_date: Optional[str] = Query(None, description="开始日期"),
     end_date: Optional[str] = Query(None, description="结束日期"),
     logistics: Optional[str] = Query(None, description="物流公司筛选"),
+    upload_type: Optional[str] = Query(None, description="上传业务类型筛选"),
     include_excel: bool = Query(True, description="是否包含Excel数据"),
     include_images: bool = Query(True, description="是否包含图片文件")
 ):
@@ -203,9 +257,20 @@ async def export_records(
             detail="至少选择一项导出内容 (include_excel 或 include_images)"
         )
 
+    upload_type_filter = normalize_upload_type_filter(upload_type)
+
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            cursor.execute("PRAGMA table_info(upload_history)")
+            columns = {col[1] for col in cursor.fetchall()}
+            has_upload_type = "upload_type" in columns
+            upload_type_select = (
+                "COALESCE(NULLIF(upload_type, ''), ?) AS upload_type"
+                if has_upload_type
+                else "? AS upload_type"
+            )
 
             # 构建WHERE条件
             where_clauses = ["deleted_at IS NULL"]
@@ -240,21 +305,22 @@ async def export_records(
                 where_clauses.append("logistics = ?")
                 params.append(logistics)
 
+            append_upload_type_filter(where_clauses, params, upload_type_filter, has_upload_type)
+
             where_sql = " AND ".join(where_clauses)
 
             # 动态检测webdav_path字段是否存在（兼容未完成迁移的旧数据库）
-            cursor.execute("PRAGMA table_info(upload_history)")
-            columns = {col[1] for col in cursor.fetchall()}
             has_webdav_path = "webdav_path" in columns
             webdav_select = "webdav_path" if has_webdav_path else "NULL as webdav_path"
 
             cursor.execute(f"""
-                SELECT doc_number, doc_type, product_type, business_id, upload_time, file_name,
+                SELECT {upload_type_select},
+                       doc_number, doc_type, product_type, business_id, upload_time, file_name,
                        file_size, status, local_file_path, notes, {webdav_select}
                 FROM upload_history
                 WHERE {where_sql}
                 ORDER BY upload_time DESC
-            """, params)
+            """, [DEFAULT_UPLOAD_TYPE] + params)
 
             rows = cursor.fetchall()
 
@@ -270,12 +336,12 @@ async def export_records(
             wb = Workbook()
             ws = wb.active
             ws.title = "上传记录"
-            headers = ["单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态", "备注"]
+            headers = ["上传业务类型", "单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态", "备注"]
             ws.append(headers)
 
             for row in rows:
-                doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
-                ws.append([doc_number, doc_type_val, product_type_val or '', business_id, upload_time, file_name, file_size, status_val, notes or ''])
+                upload_type_val, doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
+                ws.append([upload_type_val, doc_number, doc_type_val, product_type_val or '', business_id, upload_time, file_name, file_size, status_val, notes or ''])
 
             excel_filename = f"upload_records_{timestamp}.xlsx"
             excel_path = os.path.join(temp_dir, excel_filename)
@@ -286,7 +352,7 @@ async def export_records(
         image_files = []
         if include_images:
             for row in rows:
-                doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
+                upload_type_val, doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
                 arcname = os.path.join("images", file_name or f"{business_id}_{doc_number or 'unknown'}")
                 local_exists = local_file_path and os.path.exists(local_file_path)
 
@@ -491,13 +557,37 @@ async def get_statistics() -> Dict[str, Any]:
         for row in cursor.fetchall():
             by_doc_type[row[0]] = row[1]
 
+        by_upload_type = {
+            UPLOAD_TYPE_LOGISTICS: total_uploads,
+            UPLOAD_TYPE_WAREHOUSE: 0
+        }
+
+        cursor.execute("PRAGMA table_info(upload_history)")
+        columns = {col[1] for col in cursor.fetchall()}
+        if "upload_type" in columns:
+            # 按上传业务类型统计（旧NULL/空值按物流）
+            cursor.execute("""
+                SELECT COALESCE(NULLIF(upload_type, ''), ?) AS upload_type, COUNT(*) as count
+                FROM upload_history
+                WHERE deleted_at IS NULL
+                GROUP BY COALESCE(NULLIF(upload_type, ''), ?)
+            """, (DEFAULT_UPLOAD_TYPE, DEFAULT_UPLOAD_TYPE))
+
+            by_upload_type = {
+                UPLOAD_TYPE_LOGISTICS: 0,
+                UPLOAD_TYPE_WAREHOUSE: 0
+            }
+            for row in cursor.fetchall():
+                by_upload_type[row[0]] = row[1]
+
         return {
             "total_uploads": total_uploads,
             "pending_count": pending_count,
             "uploading_count": uploading_count,
             "success_count": success_count,
             "failed_count": failed_count,
-            "by_doc_type": by_doc_type
+            "by_doc_type": by_doc_type,
+            "by_upload_type": by_upload_type
         }
 
 

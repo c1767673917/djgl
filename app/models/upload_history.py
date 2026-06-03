@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+from app.core.upload_types import DEFAULT_UPLOAD_TYPE
 from app.core.timezone import get_beijing_now_naive
 
 
@@ -21,7 +22,8 @@ class UploadHistory:
         yonyou_file_id: Optional[str] = None,
         retry_count: int = 0,
         local_file_path: Optional[str] = None,
-        logistics: Optional[str] = None
+        logistics: Optional[str] = None,
+        upload_type: Optional[str] = DEFAULT_UPLOAD_TYPE
     ):
         self.id = id
         self.business_id = business_id
@@ -40,3 +42,4 @@ class UploadHistory:
         self.local_file_path = local_file_path
 
         self.logistics = logistics
+        self.upload_type = upload_type or DEFAULT_UPLOAD_TYPE

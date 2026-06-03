@@ -356,6 +356,28 @@ body {
     color: #721c24;
 }
 
+/* 业务类型标签(物流/仓库) */
+.upload-type-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.upload-type-tag.upload-type-logistics {
+    background: #e8f4fd;
+    color: #1c6dd0;
+    border: 1px solid #bcdffb;
+}
+
+.upload-type-tag.upload-type-warehouse {
+    background: #fff4e6;
+    color: #b15c00;
+    border: 1px solid #ffd9a8;
+}
+
 .file-name {
     max-width: 200px;
     overflow: hidden;

@@ -34,6 +34,7 @@ def test_db_path() -> Generator[str, None, None]:
             doc_number VARCHAR(100),
             doc_type VARCHAR(20),
             product_type TEXT DEFAULT NULL,
+            upload_type VARCHAR(20),
             file_name VARCHAR(255) NOT NULL,
             file_size INTEGER NOT NULL,
             file_extension VARCHAR(20),
@@ -49,7 +50,27 @@ def test_db_path() -> Generator[str, None, None]:
             deleted_at DATETIME DEFAULT NULL,
             checked INTEGER DEFAULT 0,
             notes TEXT DEFAULT NULL,
-            logistics TEXT DEFAULT NULL
+            logistics TEXT DEFAULT NULL,
+            webdav_path TEXT,
+            is_cached INTEGER DEFAULT 0,
+            cache_expiry_time DATETIME
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS file_metadata (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            webdav_path TEXT NOT NULL,
+            local_cache_path TEXT,
+            upload_time DATETIME NOT NULL,
+            file_size INTEGER NOT NULL,
+            is_cached INTEGER DEFAULT 1,
+            last_access_time DATETIME,
+            webdav_etag TEXT,
+            is_synced INTEGER DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
         )
     """)
 
@@ -86,6 +107,11 @@ def test_db_path() -> Generator[str, None, None]:
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_logistics
         ON upload_history(logistics)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_upload_type
+        ON upload_history(upload_type)
     """)
 
     # notes字段暂不添加索引（不用于查询筛选）
