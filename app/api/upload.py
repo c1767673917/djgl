@@ -206,6 +206,13 @@ async def background_upload_to_yonyou(
             if webdav_result.get('success') and webdav_result.get('is_cached'):
                 cache_expiry_time = (get_beijing_now_naive() + timedelta(days=settings.CACHE_DAYS)).isoformat()
 
+            # WebDAV 降级到临时存储时，文件只落在 temp 目录，需写入 local_file_path，
+            # 否则导出/预览只查 local_file_path 与 webdav_path，两者都拿不到文件。
+            # 读取端用 os.path.exists 兜底，待同步删除 temp 后会自动回退到 webdav_path。
+            local_path_value = local_file_path
+            if webdav_result and webdav_result.get('storage_type') == 'temp':
+                local_path_value = webdav_result.get('local_cache_path')
+
             if yonyou_file_id:
                 # 用友云上传成功
                 cursor.execute("""
@@ -216,6 +223,7 @@ async def background_upload_to_yonyou(
                         webdav_path = ?,
                         is_cached = ?,
                         cache_expiry_time = ?,
+                        local_file_path = ?,
                         retry_count = ?,
                         updated_at = ?
                     WHERE id = ?
@@ -225,6 +233,7 @@ async def background_upload_to_yonyou(
                     webdav_result.get('webdav_path') if webdav_result else None,
                     webdav_result.get('is_cached', False) if webdav_result else False,
                     cache_expiry_time,
+                    local_path_value,
                     retry_count,
                     get_beijing_now_naive().isoformat(),
                     record_id
@@ -240,6 +249,7 @@ async def background_upload_to_yonyou(
                         webdav_path = ?,
                         is_cached = ?,
                         cache_expiry_time = ?,
+                        local_file_path = ?,
                         retry_count = ?,
                         updated_at = ?
                     WHERE id = ?
@@ -250,6 +260,7 @@ async def background_upload_to_yonyou(
                     webdav_result.get('webdav_path') if webdav_result else None,
                     webdav_result.get('is_cached', False) if webdav_result else False,
                     cache_expiry_time,
+                    local_path_value,
                     retry_count,
                     get_beijing_now_naive().isoformat(),
                     record_id
@@ -356,6 +367,14 @@ async def background_save_warehouse_upload(
                 if webdav_result and webdav_result.get('success') and webdav_result.get('is_cached'):
                     cache_expiry_time = (get_beijing_now_naive() + timedelta(days=settings.CACHE_DAYS)).isoformat()
 
+                # WebDAV 降级到临时存储时，文件只落在 temp 目录，必须把该路径写入
+                # local_file_path，否则导出/预览只查 local_file_path 与 webdav_path，
+                # 两者都指不到真实文件。读取端均用 os.path.exists 兜底，待同步成功删除
+                # temp 文件后旧路径不存在即被跳过，自动回退到 webdav_path。
+                local_path_value = local_file_path
+                if webdav_result and webdav_result.get('storage_type') == 'temp':
+                    local_path_value = webdav_result.get('local_cache_path')
+
                 cursor.execute("""
                     UPDATE upload_history
                     SET status = 'success',
@@ -366,6 +385,7 @@ async def background_save_warehouse_upload(
                         webdav_path = ?,
                         is_cached = ?,
                         cache_expiry_time = ?,
+                        local_file_path = ?,
                         retry_count = 0,
                         updated_at = ?
                     WHERE id = ?
@@ -373,6 +393,7 @@ async def background_save_warehouse_upload(
                     webdav_result.get('webdav_path') if webdav_result and webdav_result.get('success') else None,
                     webdav_result.get('is_cached', False) if webdav_result and webdav_result.get('success') else False,
                     cache_expiry_time,
+                    local_path_value,
                     now_iso,
                     record_id
                 ))
