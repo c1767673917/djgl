@@ -250,7 +250,6 @@ function renderTable(records) {
                 >
             </td>
             <td>${record.doc_number || '-'}</td>
-            <td><span class="upload-type-tag upload-type-${record.upload_type === '仓库' ? 'warehouse' : 'logistics'}">${record.upload_type || '物流'}</span></td>
             <td>${record.doc_type || '-'}</td>
             <td>${record.product_type || ''}</td>
             <td>${formatDateTime(record.upload_time)}</td>
