@@ -8,9 +8,7 @@ const state = {
     selectedFiles: [],
     maxFiles: 10,
     maxFileSize: 10 * 1024 * 1024, // 10MB
-    uploading: false,
-    validating: false,  // 二维码验证进行中
-    fileValidationStatus: new Map()  // 文件验证状态: file对象 -> {qrCodeDetected, urlMatched, detectedUrl}
+    uploading: false
 };
 
 // DOM元素
@@ -178,54 +176,7 @@ async function handleFileSelect(e) {
         return;
     }
 
-    // 二维码验证
-    showValidationProgress(true, 0, validFiles.length);
-
-    for (let i = 0; i < validFiles.length; i++) {
-        const file = validFiles[i];
-        showValidationProgress(true, i + 1, validFiles.length);
-
-        try {
-            // 添加3秒超时保护
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('识别超时')), 3000)
-            );
-
-            const validationResult = await Promise.race([
-                validateQRCode(file),
-                timeoutPromise
-            ]);
-
-            if (validationResult.needsUserConfirmation) {
-                // 需要用户确认
-                const userDecision = await showValidationDialog(validationResult);
-
-                if (userDecision === 'retake') {
-                    // 用户选择重新拍照
-                    showValidationProgress(false);
-                    elements.fileInput.click();
-                    return;
-                } else if (userDecision === 'upload') {
-                    // 用户选择仍然上传
-                    state.selectedFiles.push(file);
-                    state.fileValidationStatus.set(file, validationResult);
-                }
-            } else {
-                // 验证通过,直接添加
-                state.selectedFiles.push(file);
-                state.fileValidationStatus.set(file, validationResult);
-            }
-
-        } catch (error) {
-            // 验证失败,降级为普通上传
-            console.error('QR code validation error:', error);
-            showToast('二维码识别超时,已跳过验证', 'warning');
-            state.selectedFiles.push(file);
-            state.fileValidationStatus.set(file, { validationFailed: true, needsUserConfirmation: false });
-        }
-    }
-
-    showValidationProgress(false);
+    state.selectedFiles.push(...validFiles);
     // 更新预览
     updatePreview();
 }
@@ -253,20 +204,8 @@ function updatePreview() {
             const item = document.createElement('div');
             item.className = 'preview-item';
 
-            // 检查验证状态
-            const validationStatus = state.fileValidationStatus.get(file);
-            const hasWarning = validationStatus &&
-                               !validationStatus.validationFailed &&
-                               (validationStatus.needsUserConfirmation || !validationStatus.urlMatched);
-
-            const warningClass = hasWarning ? 'has-warning' : '';
-            const warningBadge = hasWarning ? `
-                <div class="warning-badge" title="${validationStatus.message || '二维码验证警告'}">⚠️</div>
-            ` : '';
-
             item.innerHTML = `
-                <img src="${e.target.result}" alt="${file.name}" class="${warningClass}">
-                ${warningBadge}
+                <img src="${e.target.result}" alt="${file.name}">
                 <button class="btn-remove" onclick="removeFile(${index})">×</button>
             `;
             elements.previewList.appendChild(item);
@@ -284,7 +223,6 @@ function removeFile(index) {
 // 清空文件
 function clearFiles() {
     state.selectedFiles = [];
-    state.fileValidationStatus.clear();
     updatePreview();
 }
 
@@ -292,19 +230,6 @@ function clearFiles() {
 async function uploadFiles() {
     if (state.uploading || state.selectedFiles.length === 0) {
         return;
-    }
-
-    // 检查是否有警告图片
-    const warningCount = state.selectedFiles.filter(file => {
-        const status = state.fileValidationStatus.get(file);
-        return status && (status.needsUserConfirmation || !status.urlMatched);
-    }).length;
-
-    if (warningCount > 0) {
-        const confirmed = confirm(`有${warningCount}张图片存在二维码验证警告,确认上传?`);
-        if (!confirmed) {
-            return;
-        }
     }
 
     state.uploading = true;
@@ -485,251 +410,6 @@ function formatDateTime(dateTimeStr) {
 
     console.warn('未识别的时间格式，原样返回:', dateTimeStr);
     return dateTimeStr;
-}
-
-// ===== 二维码验证相关函数 =====
-
-/**
- * 验证图片中的二维码
- * @param {File} file - 图片文件
- * @returns {Promise<Object>} 验证结果
- */
-async function validateQRCode(file) {
-    // 检查jsQR库是否加载
-    if (typeof jsQR !== 'function') {
-        console.warn('QR code validation library not available, skipping validation');
-        return { validationSkipped: true, needsUserConfirmation: false };
-    }
-
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
-            const img = new Image();
-
-            img.onload = () => {
-                try {
-                    // 创建canvas进行图片解析
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-
-                    // 大图片降采样处理
-                    const MAX_SIZE = 2000;
-                    let width = img.width;
-                    let height = img.height;
-
-                    if (width > MAX_SIZE || height > MAX_SIZE) {
-                        const scale = Math.min(MAX_SIZE / width, MAX_SIZE / height);
-                        width = Math.floor(width * scale);
-                        height = Math.floor(height * scale);
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    context.drawImage(img, 0, 0, width, height);
-
-                    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-
-                    // 使用jsQR识别二维码
-                    const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-                    // 清理内存
-                    canvas.width = 0;
-                    canvas.height = 0;
-                    img.src = '';
-
-                    if (!code) {
-                        // 未检测到二维码
-                        resolve({
-                            qrCodeDetected: false,
-                            urlMatched: false,
-                            detectedUrl: null,
-                            needsUserConfirmation: true,
-                            message: '未在图片中检测到二维码'
-                        });
-                        return;
-                    }
-
-                    // 提取二维码内容
-                    const detectedUrl = code.data;
-                    const detectedParams = extractBusinessId(detectedUrl);
-                    const currentBusinessId = state.businessId;
-                    const currentDocNumber = state.docNumber;
-
-                    if (!detectedParams) {
-                        // 二维码内容不是有效URL
-                        resolve({
-                            qrCodeDetected: true,
-                            urlMatched: false,
-                            detectedUrl: detectedUrl,
-                            needsUserConfirmation: true,
-                            message: '二维码内容格式不正确'
-                        });
-                        return;
-                    }
-
-                    // 只验证business_id，不验证doc_number
-                    if (detectedParams.businessId === currentBusinessId) {
-                        // 验证通过
-                        resolve({
-                            qrCodeDetected: true,
-                            urlMatched: true,
-                            detectedUrl: detectedUrl,
-                            needsUserConfirmation: false
-                        });
-                    } else {
-                        // URL不匹配
-                        resolve({
-                            qrCodeDetected: true,
-                            urlMatched: false,
-                            detectedUrl: detectedUrl,
-                            detectedBusinessId: detectedParams.businessId,
-                            currentBusinessId: currentBusinessId,
-                            needsUserConfirmation: true,
-                            message: '二维码业务单据ID不一致'
-                        });
-                    }
-
-                } catch (error) {
-                    reject(error);
-                }
-            };
-
-            img.onerror = () => reject(new Error('图片加载失败'));
-            img.src = e.target.result;
-        };
-
-        reader.onerror = () => reject(new Error('文件读取失败'));
-        reader.readAsDataURL(file);
-    });
-}
-
-/**
- * 从URL中提取business_id
- * @param {string} url - 完整URL
- * @returns {Object|null} {businessId, docNumber, docType}或null
- */
-function extractBusinessId(url) {
-    // 新格式: http://xxx:port/?business_id=数字&doc_number=xx&doc_type=xx
-    try {
-        const urlObj = new URL(url);
-        const businessId = urlObj.searchParams.get('business_id');
-        const docNumber = urlObj.searchParams.get('doc_number');
-        const docType = urlObj.searchParams.get('doc_type');
-
-        // 验证business_id格式
-        if (businessId && /^\d+$/.test(businessId)) {
-            return {
-                businessId: businessId,
-                docNumber: docNumber,
-                docType: docType
-            };
-        }
-        return null;
-    } catch (e) {
-        // URL解析失败
-        return null;
-    }
-}
-
-/**
- * 显示验证进度
- * @param {boolean} show - 是否显示
- * @param {number} current - 当前进度
- * @param {number} total - 总数
- */
-function showValidationProgress(show, current = 0, total = 0) {
-    let progressOverlay = document.getElementById('qrValidationProgress');
-
-    if (!progressOverlay) {
-        // 创建进度遮罩层
-        progressOverlay = document.createElement('div');
-        progressOverlay.id = 'qrValidationProgress';
-        progressOverlay.className = 'qr-validation-progress';
-        progressOverlay.innerHTML = `
-            <div class="spinner"></div>
-            <p class="progress-text">正在识别二维码...</p>
-        `;
-        document.body.appendChild(progressOverlay);
-    }
-
-    if (show) {
-        progressOverlay.style.display = 'flex';
-        progressOverlay.querySelector('.progress-text').textContent =
-            `正在识别二维码... (${current}/${total})`;
-    } else {
-        progressOverlay.style.display = 'none';
-    }
-}
-
-/**
- * 显示验证结果对话框
- * @param {Object} result - 验证结果
- * @returns {Promise<string>} 用户决策: 'retake' | 'upload'
- */
-function showValidationDialog(result) {
-    return new Promise((resolve) => {
-        // 移除已存在的对话框(如果有)
-        const existingDialog = document.getElementById('qrValidationDialog');
-        if (existingDialog) {
-            document.body.removeChild(existingDialog);
-        }
-
-        // 创建对话框
-        const dialog = document.createElement('div');
-        dialog.id = 'qrValidationDialog';
-        dialog.className = 'qr-validation-dialog';
-
-        let message = '';
-        if (!result.qrCodeDetected) {
-            message = `
-                <div class="dialog-icon warning">⚠️</div>
-                <h3>未检测到二维码</h3>
-                <p>未在图片中检测到二维码</p>
-                <p class="hint">建议重新拍照确保二维码清晰可见</p>
-            `;
-        } else if (!result.urlMatched) {
-            const currentUrl = `${window.location.origin}/?business_id=${result.currentBusinessId || state.businessId}&doc_number=${result.currentDocNumber || state.docNumber}&doc_type=${state.docType}`;
-            message = `
-                <div class="dialog-icon warning">⚠️</div>
-                <h3>二维码不匹配</h3>
-                <p>检测到的二维码与当前单据不一致</p>
-                <div class="url-compare">
-                    <div class="url-item">
-                        <span class="label">图片单据:</span>
-                        <span class="url">${result.detectedDocNumber || '未知'}</span>
-                    </div>
-                    <div class="url-item">
-                        <span class="label">当前单据:</span>
-                        <span class="url">${result.currentDocNumber || state.docNumber}</span>
-                    </div>
-                </div>
-            `;
-        }
-
-        dialog.innerHTML = `
-            <div class="dialog-content">
-                ${message}
-                <div class="dialog-actions">
-                    <button class="btn-secondary" id="btnRetake">重新拍照</button>
-                    <button class="btn-primary" id="btnUploadAnyway">仍然上传</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(dialog);
-
-        // 绑定事件
-        dialog.querySelector('#btnRetake').addEventListener('click', () => {
-            document.body.removeChild(dialog);
-            resolve('retake');
-        });
-
-        dialog.querySelector('#btnUploadAnyway').addEventListener('click', () => {
-            document.body.removeChild(dialog);
-            resolve('upload');
-        });
-    });
 }
 
 // 启动应用
