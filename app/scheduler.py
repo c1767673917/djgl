@@ -141,6 +141,38 @@ async def sync_pending_files_task():
         logger.error(f"待同步文件检查任务异常: {str(e)}")
 
 
+async def retry_yonyou_uploads_task():
+    """用友云上传失败自动重试任务
+
+    针对瞬时DNS/网络抖动导致的 NETWORK_ERROR 失败, 定时重新上传到用友云直到成功。
+    仅处理近期失败(由 YONYOU_RETRY_LOOKBACK_HOURS 控制), 不回头补传历史单据。
+    """
+    try:
+        settings = get_config()
+
+        if not settings.YONYOU_RETRY_ENABLED:
+            logger.debug("用友云上传失败重试任务已禁用，跳过")
+            return
+
+        # 延迟导入, 避免在调度器模块加载时引入额外依赖
+        from .core.yonyou_retry_service import retry_failed_yonyou_uploads
+
+        file_manager = get_file_manager()
+        result = await retry_failed_yonyou_uploads(file_manager=file_manager)
+
+        if result.get("scanned"):
+            logger.info(
+                f"用友云上传失败重试完成: 扫描{result.get('scanned', 0)}条, "
+                f"成功{result.get('succeeded', 0)}, 仍失败{result.get('failed', 0)}, "
+                f"跳过{result.get('skipped', 0)}"
+            )
+        else:
+            logger.debug("用友云上传失败重试: 无待重试记录")
+
+    except Exception as e:
+        logger.error(f"用友云上传失败重试任务异常: {str(e)}")
+
+
 async def webdav_integrity_check_task(max_records: int = 200):
     """
     WebDAV文件完整性巡检任务
@@ -307,6 +339,21 @@ class TaskScheduler:
         )
         logger.info("已设置WebDAV文件完整性检查任务，每日凌晨3点执行")
 
+        # 6. 用友云上传失败自动重试任务（默认每小时, 重试近期网络瞬时失败）
+        if self.settings.YONYOU_RETRY_ENABLED:
+            self.scheduler.add_job(
+                func=retry_yonyou_uploads_task,
+                trigger=IntervalTrigger(hours=self.settings.YONYOU_RETRY_INTERVAL_HOURS),
+                id='retry_yonyou_uploads',
+                name='用友云上传失败重试',
+                replace_existing=True
+            )
+            logger.info(
+                f"已设置用友云上传失败重试任务，间隔{self.settings.YONYOU_RETRY_INTERVAL_HOURS}小时"
+            )
+        else:
+            logger.info("用友云上传失败重试任务已禁用(YONYOU_RETRY_ENABLED=False)")
+
     async def start(self):
         """启动调度器"""
         try:
@@ -378,6 +425,9 @@ class TaskScheduler:
             elif job_id == 'webdav_integrity_check':
                 await webdav_integrity_check_task()
                 return {'success': True, 'message': 'WebDAV文件完整性检查任务已执行'}
+            elif job_id == 'retry_yonyou_uploads':
+                await retry_yonyou_uploads_task()
+                return {'success': True, 'message': '用友云上传失败重试任务已执行'}
             else:
                 return {'success': False, 'error': f'未知任务ID: {job_id}'}
 

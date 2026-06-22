@@ -12,6 +12,7 @@ from app.core.file_manager import FileManager
 from app.core.timezone import get_beijing_now_naive
 from app.core.upload_types import (
     DEFAULT_UPLOAD_TYPE,
+    DOC_TYPE_TO_BUSINESS_TYPE,
     UPLOAD_TYPE_LOGISTICS,
     UPLOAD_TYPE_WAREHOUSE,
     VALID_UPLOAD_TYPES,
@@ -22,13 +23,6 @@ router = APIRouter()
 settings = get_settings()
 yonyou_client = YonYouClient()
 file_manager = FileManager()
-
-# doc_type到businessType的映射常量
-DOC_TYPE_TO_BUSINESS_TYPE = {
-    "销售": "yonbip-scm-scmsa",
-    "转库": "yonbip-scm-stock",
-    "其他": "yonbip-scm-stock"
-}
 
 
 def generate_unique_filename(doc_number: str, file_extension: str, storage_path: str) -> tuple[str, str]:

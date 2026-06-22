@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     RETRY_DELAY: int = 2  # 秒
     REQUEST_TIMEOUT: int = 30  # 秒
 
+    # 用友云上传失败自动重试配置
+    # 针对瞬时DNS/网络抖动导致的 NETWORK_ERROR 失败, 定时重新上传直到成功。
+    YONYOU_RETRY_ENABLED: bool = True
+    YONYOU_RETRY_INTERVAL_HOURS: int = 1   # 扫描重试间隔(小时)
+    YONYOU_RETRY_LOOKBACK_HOURS: int = 24  # 仅重试最近N小时内的失败, 避免回头补传历史单据
+    YONYOU_RETRY_MAX_RECORDS: int = 50     # 每轮最多处理的记录数
+
     # 并发控制
     MAX_CONCURRENT_UPLOADS: int = 3
 
@@ -143,6 +150,16 @@ class Settings(BaseSettings):
             raise ValueError("WebDAV重试延迟不能为负数")
         if self.WEBDAV_RETRY_DELAY > 60:
             raise ValueError("WebDAV重试延迟不能超过60秒")
+
+        # 验证用友云上传失败重试配置
+        if self.YONYOU_RETRY_INTERVAL_HOURS <= 0:
+            raise ValueError("YONYOU_RETRY_INTERVAL_HOURS必须大于0")
+        if self.YONYOU_RETRY_LOOKBACK_HOURS <= 0:
+            raise ValueError("YONYOU_RETRY_LOOKBACK_HOURS必须大于0")
+        if self.YONYOU_RETRY_MAX_RECORDS <= 0:
+            raise ValueError("YONYOU_RETRY_MAX_RECORDS必须大于0")
+        if self.YONYOU_RETRY_MAX_RECORDS > 500:
+            raise ValueError("YONYOU_RETRY_MAX_RECORDS不能超过500")
 
         # 验证必需的用友云配置
         if not self.YONYOU_APP_KEY:
