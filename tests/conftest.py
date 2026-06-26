@@ -51,6 +51,7 @@ def test_db_path() -> Generator[str, None, None]:
             checked INTEGER DEFAULT 0,
             notes TEXT DEFAULT NULL,
             logistics TEXT DEFAULT NULL,
+            customer_name TEXT DEFAULT NULL,
             webdav_path TEXT,
             is_cached INTEGER DEFAULT 0,
             cache_expiry_time DATETIME

@@ -95,6 +95,7 @@ def _mark_success(
     record_id: int,
     yonyou_file_id: str,
     logistics: Optional[str],
+    customer_name: Optional[str],
     retry_count: int,
 ) -> int:
     """置为成功; 返回受影响行数。
@@ -112,6 +113,7 @@ def _mark_success(
             SET status = 'success',
                 yonyou_file_id = ?,
                 logistics = ?,
+                customer_name = ?,
                 error_code = NULL,
                 error_message = NULL,
                 retry_count = ?,
@@ -122,7 +124,7 @@ def _mark_success(
               AND NULLIF(yonyou_file_id, '') IS NULL
               AND deleted_at IS NULL
             """,
-            (yonyou_file_id, logistics, retry_count, now_iso, record_id),
+            (yonyou_file_id, logistics, customer_name, retry_count, now_iso, record_id),
         )
         conn.commit()
         return cursor.rowcount
@@ -256,17 +258,19 @@ async def retry_failed_yonyou_uploads(
                 logger.warning(f"[用友重试] 响应缺少 file id id={record_id} doc={doc_number}")
                 continue
 
-            # 4. 补全物流信息(失败不影响主流程)
+            # 4. 补全物流信息和客户名称(失败不影响主流程)
             logistics = None
+            customer_name = None
             if business_id:
                 try:
                     detail = await yc.get_delivery_detail(business_id)
                     if detail.get("success"):
                         logistics = detail.get("logistics")
+                        customer_name = detail.get("customer_name")
                 except Exception as e:  # noqa: BLE001
-                    logger.warning(f"[用友重试] 物流信息查询异常 id={record_id}: {e}")
+                    logger.warning(f"[用友重试] 发货单详情查询异常 id={record_id}: {e}")
 
-            updated = _mark_success(record_id, yonyou_file_id, logistics, new_retry_count)
+            updated = _mark_success(record_id, yonyou_file_id, logistics, customer_name, new_retry_count)
             if updated:
                 stats["succeeded"] += 1
                 logger.info(

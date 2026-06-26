@@ -69,6 +69,7 @@ async def get_admin_records(
     start_date: Optional[str] = Query(None, description="开始日期（YYYY-MM-DD）"),
     end_date: Optional[str] = Query(None, description="结束日期（YYYY-MM-DD）"),
     logistics: Optional[str] = Query(None, description="物流公司筛选"),
+    customer_name: Optional[str] = Query(None, description="客户名称筛选(包含匹配,查询该客户相关单据)"),
     upload_type: Optional[str] = Query(None, description="上传业务类型筛选")
 ) -> Dict[str, Any]:
     """
@@ -142,6 +143,11 @@ async def get_admin_records(
             where_clauses.append("logistics = ?")
             params.append(logistics)
 
+        # 客户名称: 包含匹配(LIKE), 输入部分名称即可查出该客户的全部相关单据
+        if customer_name and customer_name.strip():
+            where_clauses.append("customer_name LIKE ?")
+            params.append(f"%{customer_name.strip()}%")
+
         append_upload_type_filter(where_clauses, params, upload_type_filter, has_upload_type)
 
         where_sql = " AND ".join(where_clauses)
@@ -158,7 +164,7 @@ async def get_admin_records(
         cursor.execute(f"""
             SELECT id, business_id, doc_number, doc_type, product_type, file_name, file_size,
                    upload_time, status, error_code, error_message, checked, notes, logistics,
-                   {upload_type_select}
+                   customer_name, {upload_type_select}
             FROM upload_history
             WHERE {where_sql}
             ORDER BY upload_time DESC
@@ -185,7 +191,8 @@ async def get_admin_records(
                 "checked": bool(row[11]),  # SQLite INTEGER转Python布尔值
                 "notes": row[12],  # 新增备注字段
                 "logistics": row[13],
-                "upload_type": row[14]
+                "customer_name": row[14],  # 新增客户名称字段
+                "upload_type": row[15]
             })
 
         return {
@@ -231,6 +238,7 @@ async def export_records(
     start_date: Optional[str] = Query(None, description="开始日期"),
     end_date: Optional[str] = Query(None, description="结束日期"),
     logistics: Optional[str] = Query(None, description="物流公司筛选"),
+    customer_name: Optional[str] = Query(None, description="客户名称筛选(包含匹配)"),
     upload_type: Optional[str] = Query(None, description="上传业务类型筛选"),
     include_excel: bool = Query(True, description="是否包含Excel数据"),
     include_images: bool = Query(True, description="是否包含图片文件")
@@ -305,6 +313,11 @@ async def export_records(
                 where_clauses.append("logistics = ?")
                 params.append(logistics)
 
+            # 客户名称: 包含匹配(LIKE)
+            if customer_name and customer_name.strip():
+                where_clauses.append("customer_name LIKE ?")
+                params.append(f"%{customer_name.strip()}%")
+
             append_upload_type_filter(where_clauses, params, upload_type_filter, has_upload_type)
 
             where_sql = " AND ".join(where_clauses)
@@ -315,7 +328,7 @@ async def export_records(
 
             cursor.execute(f"""
                 SELECT {upload_type_select},
-                       doc_number, doc_type, product_type, business_id, upload_time, file_name,
+                       doc_number, doc_type, product_type, customer_name, business_id, upload_time, file_name,
                        file_size, status, local_file_path, notes, {webdav_select}
                 FROM upload_history
                 WHERE {where_sql}
@@ -336,12 +349,12 @@ async def export_records(
             wb = Workbook()
             ws = wb.active
             ws.title = "上传记录"
-            headers = ["上传业务类型", "单据编号", "单据类型", "产品类型", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态", "备注"]
+            headers = ["上传业务类型", "单据编号", "单据类型", "产品类型", "客户名称", "业务ID", "上传时间", "文件名", "文件大小(字节)", "状态", "备注"]
             ws.append(headers)
 
             for row in rows:
-                upload_type_val, doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
-                ws.append([upload_type_val, doc_number, doc_type_val, product_type_val or '', business_id, upload_time, file_name, file_size, status_val, notes or ''])
+                upload_type_val, doc_number, doc_type_val, product_type_val, customer_name_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
+                ws.append([upload_type_val, doc_number, doc_type_val, product_type_val or '', customer_name_val or '', business_id, upload_time, file_name, file_size, status_val, notes or ''])
 
             excel_filename = f"upload_records_{timestamp}.xlsx"
             excel_path = os.path.join(temp_dir, excel_filename)
@@ -352,7 +365,7 @@ async def export_records(
         image_files = []
         if include_images:
             for row in rows:
-                upload_type_val, doc_number, doc_type_val, product_type_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
+                upload_type_val, doc_number, doc_type_val, product_type_val, customer_name_val, business_id, upload_time, file_name, file_size, status_val, local_file_path, notes, webdav_path = row
                 arcname = os.path.join("images", file_name or f"{business_id}_{doc_number or 'unknown'}")
                 local_exists = local_file_path and os.path.exists(local_file_path)
 

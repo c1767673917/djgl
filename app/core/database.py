@@ -69,6 +69,7 @@ def init_database():
                 retry_count INTEGER DEFAULT 0,
                 local_file_path VARCHAR(500),
                 logistics TEXT,
+                customer_name TEXT,
                 created_at DATETIME,
                 updated_at DATETIME,
                 deleted_at DATETIME
@@ -106,6 +107,10 @@ def init_database():
         # 添加物流字段 (支持物流公司筛选)
         if 'logistics' not in columns:
             cursor.execute("ALTER TABLE upload_history ADD COLUMN logistics TEXT DEFAULT NULL")
+
+        # 添加客户名称字段 (从用友发货单详情 agentId_name 获取, 支持客户名称包含查询)
+        if 'customer_name' not in columns:
+            cursor.execute("ALTER TABLE upload_history ADD COLUMN customer_name TEXT DEFAULT NULL")
 
         # 添加上传业务类型字段 (物流/仓库)
         if 'upload_type' not in columns:
@@ -163,6 +168,12 @@ def init_database():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_logistics
             ON upload_history(logistics)
+        """)
+
+        # 客户名称索引 (优化客户名称筛选查询性能)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_customer_name
+            ON upload_history(customer_name)
         """)
 
         # 上传业务类型索引 (优化物流/仓库筛选)

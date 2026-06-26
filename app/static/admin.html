@@ -194,6 +194,15 @@
                     <!-- 动态加载选项 -->
                 </select>
 
+                <!-- 客户名称筛选 (包含匹配,查询该客户相关单据) -->
+                <input
+                    type="text"
+                    id="customerNameFilter"
+                    class="search-input"
+                    placeholder="客户名称(可输入部分)"
+                    title="输入客户名称的任意部分,查询该客户的相关单据"
+                >
+
                 <!-- 日期筛选器 - 单行紧凑布局 -->
                 <div class="date-range-compact">
                     <input
@@ -225,6 +234,7 @@
                             <input type="checkbox" id="selectAll" title="全选">
                         </th>
                         <th>单据编号</th>
+                        <th>客户名称</th>
                         <th>单据类型</th>
                         <th>产品类型</th>
                         <th>上传时间</th>

@@ -23,6 +23,7 @@ class UploadHistory:
         retry_count: int = 0,
         local_file_path: Optional[str] = None,
         logistics: Optional[str] = None,
+        customer_name: Optional[str] = None,
         upload_type: Optional[str] = DEFAULT_UPLOAD_TYPE
     ):
         self.id = id
@@ -42,4 +43,5 @@ class UploadHistory:
         self.local_file_path = local_file_path
 
         self.logistics = logistics
+        self.customer_name = customer_name
         self.upload_type = upload_type or DEFAULT_UPLOAD_TYPE

@@ -178,18 +178,20 @@ async def background_upload_to_yonyou(
                 if attempt < settings.MAX_RETRY_COUNT - 1:
                     await asyncio.sleep(settings.RETRY_DELAY)
 
-        # 物流信息查询 (上传成功后)
+        # 物流信息 + 客户名称查询 (上传成功后)
         logistics = None
+        customer_name = None
         if yonyou_file_id and business_id:
             try:
                 logistics_result = await yonyou_client.get_delivery_detail(business_id)
                 if logistics_result.get('success'):
                     logistics = logistics_result.get('logistics')
-                    print(f"物流信息获取成功: {logistics or '(空)'}")
+                    customer_name = logistics_result.get('customer_name')
+                    print(f"发货单详情获取成功: 物流={logistics or '(空)'} 客户={customer_name or '(空)'}")
                 else:
-                    print(f"物流信息获取失败: {logistics_result.get('error_message', '未知错误')}")
+                    print(f"发货单详情获取失败: {logistics_result.get('error_message', '未知错误')}")
             except Exception as logistics_error:
-                print(f"物流信息查询异常: {str(logistics_error)}")
+                print(f"发货单详情查询异常: {str(logistics_error)}")
 
         # 4. 更新最终状态 (使用并发安全的数据库连接)
         with get_db_connection() as conn:
@@ -214,6 +216,7 @@ async def background_upload_to_yonyou(
                     SET status = 'success',
                         yonyou_file_id = ?,
                         logistics = ?,
+                        customer_name = ?,
                         webdav_path = ?,
                         is_cached = ?,
                         cache_expiry_time = ?,
@@ -224,6 +227,7 @@ async def background_upload_to_yonyou(
                 """, (
                     yonyou_file_id,
                     logistics,
+                    customer_name,
                     webdav_result.get('webdav_path') if webdav_result else None,
                     webdav_result.get('is_cached', False) if webdav_result else False,
                     cache_expiry_time,
@@ -240,6 +244,7 @@ async def background_upload_to_yonyou(
                         error_code = ?,
                         error_message = ?,
                         logistics = ?,
+                        customer_name = ?,
                         webdav_path = ?,
                         is_cached = ?,
                         cache_expiry_time = ?,
@@ -250,6 +255,7 @@ async def background_upload_to_yonyou(
                 """, (
                     error_code,
                     error_message,
+                    None,
                     None,
                     webdav_result.get('webdav_path') if webdav_result else None,
                     webdav_result.get('is_cached', False) if webdav_result else False,
@@ -374,6 +380,7 @@ async def background_save_warehouse_upload(
                     SET status = 'success',
                         yonyou_file_id = NULL,
                         logistics = NULL,
+                        customer_name = NULL,
                         error_code = NULL,
                         error_message = NULL,
                         webdav_path = ?,
@@ -424,6 +431,7 @@ async def background_save_warehouse_upload(
                         error_message = ?,
                         yonyou_file_id = NULL,
                         logistics = NULL,
+                        customer_name = NULL,
                         updated_at = ?
                     WHERE id = ?
                 """, (error_detail or '仓库文件保存失败', now_iso, record_id))
@@ -440,6 +448,7 @@ async def background_save_warehouse_upload(
                         error_message = ?,
                         yonyou_file_id = NULL,
                         logistics = NULL,
+                        customer_name = NULL,
                         updated_at = ?
                     WHERE id = ?
                 """, (str(e), get_beijing_now_naive().isoformat(), record_id))

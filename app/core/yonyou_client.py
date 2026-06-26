@@ -177,14 +177,14 @@ class YonYouClient:
         delivery_id: str,
         retry_count: int = 0
     ) -> Dict[str, Any]:
-        """查询销售发货单详情并提取物流公司名称
+        """查询销售发货单详情并提取物流公司名称、客户名称
 
         Args:
             delivery_id: 发货单业务数据ID
             retry_count: Token刷新重试次数
 
         Returns:
-            包含物流信息的结果字典
+            包含物流信息和客户名称的结果字典
         """
         try:
             access_token = await self.get_access_token()
@@ -207,10 +207,13 @@ class YonYouClient:
                 data = result.get('data') or {}
                 define_character = data.get('deliveryVoucherDefineCharacter') or {}
                 logistics = define_character.get('RX003_name')
+                # 客户名称: 发货单详情顶层字段 agentId_name
+                customer_name = data.get('agentId_name')
 
                 return {
                     'success': True,
                     'logistics': logistics,
+                    'customer_name': customer_name,
                     'error_code': None,
                     'error_message': None
                 }
@@ -225,6 +228,7 @@ class YonYouClient:
             return {
                 'success': False,
                 'logistics': None,
+                'customer_name': None,
                 'error_code': error_code,
                 'error_message': error_message
             }
@@ -233,6 +237,7 @@ class YonYouClient:
             return {
                 'success': False,
                 'logistics': None,
+                'customer_name': None,
                 'error_code': 'NETWORK_ERROR',
                 'error_message': str(exc)
             }

@@ -12,6 +12,7 @@ const state = {
         docType: '',
         productType: '',
         logistics: '',  // 新增:物流筛选
+        customerName: '',  // 新增:客户名称筛选(包含匹配)
         status: '',  // 新增：状态筛选
         startDate: '',
         endDate: ''
@@ -55,6 +56,7 @@ const elements = {
     productTypeFilter: document.getElementById('productTypeFilter'),
     statusFilter: document.getElementById('statusFilter'),  // 新增
     logisticsFilter: document.getElementById('logisticsFilter'),  // 新增:物流筛选
+    customerNameFilter: document.getElementById('customerNameFilter'),  // 新增:客户名称筛选
     startDateInput: document.getElementById('startDateInput'),
     endDateInput: document.getElementById('endDateInput'),
     btnSearch: document.getElementById('btnSearch'),
@@ -115,6 +117,13 @@ function init() {
     elements.searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') handleSearch();
     });
+
+    // 客户名称输入框回车搜索
+    if (elements.customerNameFilter) {
+        elements.customerNameFilter.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSearch();
+        });
+    }
 
     // 删除相关事件
     elements.btnBatchDelete.addEventListener('click', handleBatchDelete);
@@ -213,6 +222,7 @@ async function loadRecords() {
         if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.status) params.append('status', state.filters.status);  // 新增
         if (state.filters.logistics && state.filters.logistics !== '全部物流') params.append('logistics', state.filters.logistics);  // 新增:物流筛选
+        if (state.filters.customerName) params.append('customer_name', state.filters.customerName);  // 新增:客户名称包含匹配
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
@@ -256,6 +266,7 @@ function renderTable(records) {
                 >
             </td>
             <td>${record.doc_number || '-'}</td>
+            <td title="${escapeHtml(record.customer_name)}">${record.customer_name ? escapeHtml(record.customer_name) : '-'}</td>
             <td>${record.doc_type || '-'}</td>
             <td>${record.product_type || ''}</td>
             <td>${formatDateTime(record.upload_time)}</td>
@@ -368,6 +379,7 @@ function handleSearch() {
     state.filters.productType = elements.productTypeFilter.value;
     state.filters.status = elements.statusFilter ? elements.statusFilter.value : '';  // 新增
     state.filters.logistics = elements.logisticsFilter ? elements.logisticsFilter.value : '';  // 新增:物流筛选
+    state.filters.customerName = elements.customerNameFilter ? elements.customerNameFilter.value.trim() : '';  // 新增:客户名称筛选
     state.filters.startDate = elements.startDateInput.value;
     state.filters.endDate = elements.endDateInput.value;
 
@@ -389,6 +401,9 @@ function handleReset() {
     if (elements.logisticsFilter) {
         elements.logisticsFilter.value = '全部物流';  // 新增:重置物流筛选
     }
+    if (elements.customerNameFilter) {
+        elements.customerNameFilter.value = '';  // 新增:重置客户名称筛选
+    }
     elements.startDateInput.value = '';
     elements.endDateInput.value = '';
 
@@ -399,6 +414,7 @@ function handleReset() {
         productType: '',
         status: '',  // 新增
         logistics: '',  // 新增:物流筛选
+        customerName: '',  // 新增:客户名称筛选
         startDate: '',
         endDate: ''
     };
@@ -493,6 +509,7 @@ async function handleConfirmExport() {
         if (state.filters.productType) params.append('product_type', state.filters.productType);
         if (state.filters.status) params.append('status', state.filters.status);
         if (state.filters.logistics && state.filters.logistics !== '全部物流') params.append('logistics', state.filters.logistics);
+        if (state.filters.customerName) params.append('customer_name', state.filters.customerName);
         if (state.filters.startDate) params.append('start_date', state.filters.startDate);
         if (state.filters.endDate) params.append('end_date', state.filters.endDate);
 
@@ -559,6 +576,17 @@ function truncateFileName(fileName) {
     if (!fileName) return '-';
     if (fileName.length <= 17) return fileName;
     return fileName.substring(0, 17) + '...';
+}
+
+// HTML 转义: 客户名称等来自外部接口的文本拼入 innerHTML 前先转义, 防止 DOM 注入
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // 显示Toast
