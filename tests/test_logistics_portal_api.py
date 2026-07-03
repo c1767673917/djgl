@@ -101,6 +101,8 @@ class TestPortalDeliveries:
         # TESTPT6仅有仓库同号记录 -> 仍待上传; TESTPT7空串upload_type按物流 -> 排除
         assert codes == ["TESTPTCODE1", "TESTPTCODE4", "TESTPTCODE6"]  # 按vouchdate升序
         assert data["total"] == 3
+        # 运费属内部信息, 不对物流侧暴露
+        assert all("freight" not in d for d in data["deliveries"])
 
     def test_warehouse_upload_does_not_exclude(self, test_client, setup_portal_data):
         """仓库上传(upload_type='仓库')同号记录不代表物流回单已传, 不应排除"""

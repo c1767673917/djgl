@@ -390,7 +390,7 @@ def get_portal_data(token: str) -> Optional[Dict[str, Any]]:
         cursor.execute(
             f"""
             SELECT s.delivery_id, s.delivery_code, s.customer_name,
-                   s.vouchdate, s.freight
+                   s.vouchdate
             FROM delivery_snapshot s
             WHERE s.logistics_name = ?
               AND {_NOT_UPLOADED_CONDITION}
@@ -404,7 +404,6 @@ def get_portal_data(token: str) -> Optional[Dict[str, Any]]:
                 "delivery_code": row["delivery_code"],
                 "customer_name": row["customer_name"],
                 "vouchdate": row["vouchdate"],
-                "freight": row["freight"],
                 "upload_url": "/?" + urllib.parse.urlencode(
                     {
                         "business_id": row["delivery_id"],

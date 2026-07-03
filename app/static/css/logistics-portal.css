@@ -165,11 +165,6 @@ body {
     gap: 4px 14px;
 }
 
-.delivery-freight {
-    color: var(--warning-dark);
-    font-weight: 600;
-}
-
 .btn-upload {
     flex-shrink: 0;
     display: inline-flex;

@@ -31,11 +31,6 @@
         return String(value).replace('T', ' ').slice(0, 16);
     }
 
-    function formatFreight(value) {
-        if (value == null) return '—';
-        return Number(value).toLocaleString('zh-CN');
-    }
-
     function showState(message, extraClass) {
         els.listContainer.innerHTML =
             `<div class="state-tip ${extraClass || ''}">${escapeHtml(message)}</div>`;
@@ -65,7 +60,6 @@
                     <div class="delivery-sub">
                         <span>${escapeHtml(d.customer_name || '—')}</span>
                         <span>发货日期 ${escapeHtml(d.vouchdate || '—')}</span>
-                        <span class="delivery-freight">运费 ${formatFreight(d.freight)} 元</span>
                     </div>
                 </div>
                 <a class="btn-upload" href="${escapeHtml(d.upload_url)}" target="_blank" rel="noopener">上传回单</a>
