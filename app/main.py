@@ -6,7 +6,7 @@ from app.core.config import get_settings
 from app.core.database import init_database, verify_database_schema
 from app.core.logging_config import setup_logging
 from app.core.file_manager import FileManager
-from app.api import upload, history, admin, migration, webdav
+from app.api import upload, history, admin, migration, webdav, logistics_links, logistics_portal
 
 settings = get_settings()
 file_manager = FileManager()
@@ -45,6 +45,8 @@ app.include_router(history.router, prefix="/api", tags=["history"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(migration.router, prefix="/api/admin/migration", tags=["migration"])
 app.include_router(webdav.router, prefix="/api/admin/webdav", tags=["webdav"])
+app.include_router(logistics_links.router, prefix="/api/admin/logistics-links", tags=["logistics-links"])
+app.include_router(logistics_portal.router, prefix="/api/portal", tags=["logistics-portal"])
 
 
 # 启动事件
@@ -207,3 +209,20 @@ async def get_uploaded_file(file_path: str):
 async def admin_page():
     """管理页面入口"""
     return FileResponse("app/static/admin.html")
+
+
+# 物流链接管理页面（管理侧）
+@app.get("/admin/logistics-links")
+async def logistics_links_page():
+    """物流链接管理页面入口"""
+    return FileResponse("app/static/logistics-links.html")
+
+
+# 物流待上传门户页面（物流侧, token即凭证）
+@app.get("/l/{token}")
+async def logistics_portal_page(token: str):
+    """物流待上传门户页面入口, 无效token直接404"""
+    from app.core.delivery_sync_service import get_token_row
+    if get_token_row(token) is None:
+        raise HTTPException(status_code=404, detail="链接无效或已失效")
+    return FileResponse("app/static/logistics-portal.html")

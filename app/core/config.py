@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     # 并发控制
     MAX_CONCURRENT_UPLOADS: int = 3
 
+    # 发货单快照同步配置(物流待上传门户数据源)
+    # 定时从用友"销售发货列表"拉取过去N天表头, 本地过滤(非自提且运费>阈值)后写入 delivery_snapshot 表。
+    DELIVERY_SYNC_ENABLED: bool = True
+    DELIVERY_SYNC_INTERVAL_MINUTES: int = 30      # 定时同步间隔(分钟)
+    DELIVERY_SYNC_LOOKBACK_DAYS: int = 60         # 查询窗口: 过去N天到今天
+    DELIVERY_SYNC_PAGE_SIZE: int = 200            # 列表API每页行数
+    DELIVERY_SYNC_MAX_PAGES: int = 50             # 单轮最大页数(防死循环)
+    DELIVERY_SYNC_MIN_FREIGHT: float = 100.0      # 运费阈值, 仅保留运费大于该值的单据
+    DELIVERY_SYNC_PAGE_INTERVAL_SECONDS: float = 1.6  # 页间隔, 限流40次/分留余量
+    DELIVERY_SYNC_MANUAL_COOLDOWN_SECONDS: int = 300  # 管理页手动同步冷却
+
     # 数据库配置
     DATABASE_URL: str = "sqlite:///data/uploads.db"
 
@@ -160,6 +171,20 @@ class Settings(BaseSettings):
             raise ValueError("YONYOU_RETRY_MAX_RECORDS必须大于0")
         if self.YONYOU_RETRY_MAX_RECORDS > 500:
             raise ValueError("YONYOU_RETRY_MAX_RECORDS不能超过500")
+
+        # 验证发货单快照同步配置
+        if self.DELIVERY_SYNC_INTERVAL_MINUTES <= 0:
+            raise ValueError("DELIVERY_SYNC_INTERVAL_MINUTES必须大于0")
+        if self.DELIVERY_SYNC_LOOKBACK_DAYS <= 0:
+            raise ValueError("DELIVERY_SYNC_LOOKBACK_DAYS必须大于0")
+        if not (1 <= self.DELIVERY_SYNC_PAGE_SIZE <= 500):
+            raise ValueError("DELIVERY_SYNC_PAGE_SIZE必须在1-500之间")
+        if self.DELIVERY_SYNC_MAX_PAGES <= 0:
+            raise ValueError("DELIVERY_SYNC_MAX_PAGES必须大于0")
+        if self.DELIVERY_SYNC_PAGE_INTERVAL_SECONDS < 0:
+            raise ValueError("DELIVERY_SYNC_PAGE_INTERVAL_SECONDS不能为负数")
+        if self.DELIVERY_SYNC_MANUAL_COOLDOWN_SECONDS < 0:
+            raise ValueError("DELIVERY_SYNC_MANUAL_COOLDOWN_SECONDS不能为负数")
 
         # 验证必需的用友云配置
         if not self.YONYOU_APP_KEY:

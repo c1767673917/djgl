@@ -5,7 +5,7 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -171,6 +171,33 @@ async def retry_yonyou_uploads_task():
 
     except Exception as e:
         logger.error(f"用友云上传失败重试任务异常: {str(e)}")
+
+
+async def delivery_sync_task():
+    """发货单快照同步任务
+
+    从用友"销售发货列表"拉取过去N天表头, 本地过滤(非自提且运费超阈值)后
+    全量替换 delivery_snapshot 表, 供物流待上传门户查询。
+    """
+    try:
+        settings = get_config()
+
+        if not settings.DELIVERY_SYNC_ENABLED:
+            logger.debug("发货单快照同步任务已禁用，跳过")
+            return
+
+        # 延迟导入, 避免在调度器模块加载时引入额外依赖
+        from .core.delivery_sync_service import sync_delivery_snapshot
+
+        result = await sync_delivery_snapshot(trigger="scheduled")
+
+        if result.get("skipped"):
+            logger.info(f"发货单快照同步跳过: {result.get('error')}")
+        elif not result.get("success"):
+            logger.warning(f"发货单快照同步失败: {result.get('error')}")
+
+    except Exception as e:
+        logger.error(f"发货单快照同步任务异常: {str(e)}")
 
 
 async def webdav_integrity_check_task(max_records: int = 200):
@@ -354,6 +381,23 @@ class TaskScheduler:
         else:
             logger.info("用友云上传失败重试任务已禁用(YONYOU_RETRY_ENABLED=False)")
 
+        # 7. 发货单快照同步任务（默认每30分钟, 供物流待上传门户查询）
+        if self.settings.DELIVERY_SYNC_ENABLED:
+            self.scheduler.add_job(
+                func=delivery_sync_task,
+                trigger=IntervalTrigger(minutes=self.settings.DELIVERY_SYNC_INTERVAL_MINUTES),
+                # 启动15秒后先补一轮, 避免应用重启后快照为空的冷启动窗口
+                next_run_time=datetime.now() + timedelta(seconds=15),
+                id='delivery_sync',
+                name='发货单快照同步',
+                replace_existing=True
+            )
+            logger.info(
+                f"已设置发货单快照同步任务，间隔{self.settings.DELIVERY_SYNC_INTERVAL_MINUTES}分钟"
+            )
+        else:
+            logger.info("发货单快照同步任务已禁用(DELIVERY_SYNC_ENABLED=False)")
+
     async def start(self):
         """启动调度器"""
         try:
@@ -428,6 +472,9 @@ class TaskScheduler:
             elif job_id == 'retry_yonyou_uploads':
                 await retry_yonyou_uploads_task()
                 return {'success': True, 'message': '用友云上传失败重试任务已执行'}
+            elif job_id == 'delivery_sync':
+                await delivery_sync_task()
+                return {'success': True, 'message': '发货单快照同步任务已执行'}
             else:
                 return {'success': False, 'error': f'未知任务ID: {job_id}'}
 

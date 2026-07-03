@@ -747,3 +747,110 @@ class TestDeliveryDetail:
         assert result['logistics'] is None
         assert result['error_code'] == 'NETWORK_ERROR'
         assert '网络超时' in result['error_message']
+
+
+class TestGetDeliveryList:
+    """测试销售发货列表查询"""
+
+    def _mock_list_response(self, records, record_count=None, page_count=1):
+        return {
+            'code': '200',
+            'message': '操作成功',
+            'data': {
+                'recordCount': record_count if record_count is not None else len(records),
+                'pageCount': page_count,
+                'recordList': records,
+            }
+        }
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_list_success(self):
+        """测试列表查询成功解析"""
+        client = YonYouClient()
+        records = [{'id': 1, 'code': 'RXXOUT202607-0001'}]
+        mock_response = self._mock_list_response(records, record_count=100, page_count=5)
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')):
+            with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+                mock_http_response = Mock()
+                mock_http_response.json.return_value = mock_response
+                mock_post.return_value = mock_http_response
+
+                result = await client.get_delivery_list(
+                    1, 200, '2026-05-01 00:00:00', '2026-07-01 23:59:59'
+                )
+
+                # 验证请求体: isSum=true(表头级), 不带simpleVOs过滤
+                request_body = mock_post.call_args.kwargs['json']
+                assert request_body['isSum'] is True
+                assert request_body['pageIndex'] == 1
+                assert request_body['pageSize'] == 200
+                assert request_body['simpleVOs'] == []
+
+        assert result['success'] is True
+        assert result['record_count'] == 100
+        assert result['page_count'] == 5
+        assert result['records'] == records
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_list_token_expired_retry(self):
+        """测试token失效(310036)时强制刷新并重试一次"""
+        client = YonYouClient()
+        expired_response = {'code': '310036', 'message': '非法token'}
+        success_response = self._mock_list_response([{'id': 1}])
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')) as mock_token:
+            with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+                first = Mock()
+                first.json.return_value = expired_response
+                second = Mock()
+                second.json.return_value = success_response
+                mock_post.side_effect = [first, second]
+
+                result = await client.get_delivery_list(
+                    1, 200, '2026-05-01 00:00:00', '2026-07-01 23:59:59'
+                )
+
+        assert result['success'] is True
+        assert mock_post.call_count == 2
+        # 重试前强制刷新过token
+        assert any(
+            call.kwargs.get('force_refresh') for call in mock_token.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_list_api_error_no_retry(self):
+        """测试非token类业务错误不重试"""
+        client = YonYouClient()
+        mock_response = {'code': '500', 'message': '服务器内部错误'}
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')):
+            with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+                mock_http_response = Mock()
+                mock_http_response.json.return_value = mock_response
+                mock_post.return_value = mock_http_response
+
+                result = await client.get_delivery_list(
+                    1, 200, '2026-05-01 00:00:00', '2026-07-01 23:59:59'
+                )
+
+        assert result['success'] is False
+        assert result['error_code'] == '500'
+        assert result['records'] == []
+        assert mock_post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_get_delivery_list_network_error(self):
+        """测试网络异常场景"""
+        client = YonYouClient()
+
+        with patch.object(client, 'get_access_token', new=AsyncMock(return_value='fake_token')):
+            with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
+                mock_post.side_effect = Exception('连接超时')
+                result = await client.get_delivery_list(
+                    1, 200, '2026-05-01 00:00:00', '2026-07-01 23:59:59'
+                )
+
+        assert result['success'] is False
+        assert result['error_code'] == 'NETWORK_ERROR'
+        assert '连接超时' in result['error_message']

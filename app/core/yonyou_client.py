@@ -242,3 +242,87 @@ class YonYouClient:
                 'error_message': str(exc)
             }
 
+    async def get_delivery_list(
+        self,
+        page_index: int,
+        page_size: int,
+        vouchdate_begin: str,
+        vouchdate_end: str,
+        retry_count: int = 0
+    ) -> Dict[str, Any]:
+        """查询销售发货列表(表头级, isSum=true)
+
+        Args:
+            page_index: 页号, 从1开始
+            page_size: 每页行数
+            vouchdate_begin: 发货开始时间 "YYYY-MM-DD HH:MM:SS"
+            vouchdate_end: 发货结束时间 "YYYY-MM-DD HH:MM:SS"
+            retry_count: Token刷新重试次数
+
+        Returns:
+            {"success", "record_count", "page_count", "records", "error_code", "error_message"}
+        """
+        try:
+            access_token = await self.get_access_token()
+            encoded_token = urllib.parse.quote(access_token, safe='')
+
+            parsed_auth_url = urllib.parse.urlparse(self.auth_url)
+            base_url = f"{parsed_auth_url.scheme}://{parsed_auth_url.netloc}"
+            list_url = f"{base_url}/iuap-api-gateway/yonbip/sd/voucherdelivery/list?access_token={encoded_token}"
+
+            # isSum=true 返回表头级记录(每张发货单一行)
+            # 不传 simpleVOs: 服务端对自定义字段(deliveryVoucherDefineCharacter)过滤不生效, 过滤在本地做
+            body = {
+                "isDefault": True,
+                "pageIndex": page_index,
+                "pageSize": page_size,
+                "open_vouchdate_begin": vouchdate_begin,
+                "open_vouchdate_end": vouchdate_end,
+                "isSum": True,
+                "simpleVOs": [],
+                "queryOrders": [{"field": "vouchdate", "order": "desc"}]
+            }
+
+            async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT) as client:
+                response = await client.post(list_url, json=body)
+                result = response.json()
+
+            if str(result.get('code')) == '200':
+                data = result.get('data') or {}
+                return {
+                    'success': True,
+                    'record_count': data.get('recordCount', 0),
+                    'page_count': data.get('pageCount', 0),
+                    'records': data.get('recordList') or [],
+                    'error_code': None,
+                    'error_message': None
+                }
+
+            error_code = str(result.get('code'))
+            error_message = result.get('message', '未知错误')
+
+            if error_code in ['1090003500065', '310036'] and retry_count == 0:
+                await self.get_access_token(force_refresh=True)
+                return await self.get_delivery_list(
+                    page_index, page_size, vouchdate_begin, vouchdate_end, retry_count + 1
+                )
+
+            return {
+                'success': False,
+                'record_count': 0,
+                'page_count': 0,
+                'records': [],
+                'error_code': error_code,
+                'error_message': error_message
+            }
+
+        except Exception as exc:
+            return {
+                'success': False,
+                'record_count': 0,
+                'page_count': 0,
+                'records': [],
+                'error_code': 'NETWORK_ERROR',
+                'error_message': str(exc)
+            }
+

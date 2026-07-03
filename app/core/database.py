@@ -187,6 +187,57 @@ def init_database():
             ON upload_history(upload_type, upload_time)
         """)
 
+        # 物流专属链接token表 (物流待上传门户)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS logistics_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                logistics_name TEXT NOT NULL UNIQUE,
+                token TEXT NOT NULL UNIQUE,
+                enabled INTEGER DEFAULT 1,
+                created_at DATETIME,
+                updated_at DATETIME,
+                last_access_at DATETIME
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_lt_token
+            ON logistics_tokens(token)
+        """)
+
+        # 发货单快照表 (用友销售发货列表定时同步, 仅存非自提且运费超阈值的表头行)
+        # delivery_id 为用友19位长整型id, 全链路按字符串处理防精度丢失
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS delivery_snapshot (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                delivery_id TEXT NOT NULL UNIQUE,
+                delivery_code TEXT,
+                customer_name TEXT,
+                vouchdate TEXT,
+                logistics_name TEXT NOT NULL,
+                freight REAL,
+                synced_at DATETIME
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ds_logistics
+            ON delivery_snapshot(logistics_name)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ds_code
+            ON delivery_snapshot(delivery_code)
+        """)
+
+        # 通用键值元数据表 (记录快照同步状态等)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
         conn.commit()
 
 
