@@ -322,9 +322,15 @@ def get_sync_state() -> Dict[str, Any]:
 _NOT_UPLOADED_CONDITION = f"""
     NOT EXISTS (
         SELECT 1 FROM upload_history u
-        WHERE u.deleted_at IS NULL
+        WHERE u.business_id = s.delivery_id
+          AND u.deleted_at IS NULL
           AND COALESCE(NULLIF(u.upload_type, ''), '{DEFAULT_UPLOAD_TYPE}') = '{UPLOAD_TYPE_LOGISTICS}'
-          AND (u.business_id = s.delivery_id OR u.doc_number = s.delivery_code)
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM upload_history u
+        WHERE u.doc_number = s.delivery_code
+          AND u.deleted_at IS NULL
+          AND COALESCE(NULLIF(u.upload_type, ''), '{DEFAULT_UPLOAD_TYPE}') = '{UPLOAD_TYPE_LOGISTICS}'
     )
 """
 
