@@ -185,6 +185,15 @@ def _parse_freight(value: Any) -> float:
         return 0.0
 
 
+def _parse_optional_number(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
 def _extract_and_filter(raw_records: List[dict]) -> List[Dict[str, Any]]:
     """本地过滤 + 字段提取 + 按 delivery_id 去重
 
@@ -216,6 +225,9 @@ def _extract_and_filter(raw_records: List[dict]) -> List[Dict[str, Any]]:
             "vouchdate": vouchdate,
             "logistics_name": logistics,
             "freight": freight,
+            "shipping_memo": str(rec.get("shippingMemo") or "").strip() or None,
+            # isSum=true 表头行的 totalOutStockPriceQty 已是整单汇总的计价数量
+            "total_price_qty": _parse_optional_number(rec.get("totalOutStockPriceQty")),
         }
     return list(kept.values())
 
@@ -232,8 +244,8 @@ def _replace_snapshot_and_tokens(rows: List[Dict[str, Any]]) -> None:
             """
             INSERT INTO delivery_snapshot
                 (delivery_id, delivery_code, customer_name, vouchdate,
-                 logistics_name, freight, synced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 logistics_name, freight, shipping_memo, total_price_qty, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -243,6 +255,8 @@ def _replace_snapshot_and_tokens(rows: List[Dict[str, Any]]) -> None:
                     row["vouchdate"],
                     row["logistics_name"],
                     row["freight"],
+                    row["shipping_memo"],
+                    row["total_price_qty"],
                     now_iso,
                 )
                 for row in rows
@@ -390,7 +404,7 @@ def get_portal_data(token: str) -> Optional[Dict[str, Any]]:
         cursor.execute(
             f"""
             SELECT s.delivery_id, s.delivery_code, s.customer_name,
-                   s.vouchdate
+                   s.vouchdate, s.shipping_memo, s.total_price_qty
             FROM delivery_snapshot s
             WHERE s.logistics_name = ?
               AND {_NOT_UPLOADED_CONDITION}
@@ -404,6 +418,8 @@ def get_portal_data(token: str) -> Optional[Dict[str, Any]]:
                 "delivery_code": row["delivery_code"],
                 "customer_name": row["customer_name"],
                 "vouchdate": row["vouchdate"],
+                "shipping_memo": row["shipping_memo"],
+                "total_price_qty": row["total_price_qty"],
                 "upload_url": "/?" + urllib.parse.urlencode(
                     {
                         "business_id": row["delivery_id"],

@@ -43,16 +43,16 @@ def setup_portal_data():
 
         cursor.executemany(
             "INSERT INTO delivery_snapshot (delivery_id, delivery_code, customer_name,"
-            " vouchdate, logistics_name, freight, synced_at)"
-            " VALUES (?,?,?,?,?,?, datetime('now'))",
+            " vouchdate, logistics_name, freight, shipping_memo, total_price_qty, synced_at)"
+            " VALUES (?,?,?,?,?,?,?,?, datetime('now'))",
             [
-                ("TESTPT1", "TESTPTCODE1", "客户甲", "2026-06-03", "测试物流甲", 500.0),
-                ("TESTPT2", "TESTPTCODE2", "客户乙", "2026-06-01", "测试物流甲", 300.0),
-                ("TESTPT3", "TESTPTCODE3", "客户丙", "2026-06-02", "测试物流甲", 700.0),
-                ("TESTPT4", "TESTPTCODE4", "客户丁", "2026-06-04", "测试物流甲", 200.0),
-                ("TESTPT5", "TESTPTCODE5", "客户戊", "2026-06-05", "测试物流乙", 900.0),
-                ("TESTPT6", "TESTPTCODE6", "客户己", "2026-06-06", "测试物流甲", 400.0),
-                ("TESTPT7", "TESTPTCODE7", "客户庚", "2026-06-07", "测试物流甲", 600.0),
+                ("TESTPT1", "TESTPTCODE1", "客户甲", "2026-06-03", "测试物流甲", 500.0, "5月平台开票", 1430.0),
+                ("TESTPT2", "TESTPTCODE2", "客户乙", "2026-06-01", "测试物流甲", 300.0, None, 100.0),
+                ("TESTPT3", "TESTPTCODE3", "客户丙", "2026-06-02", "测试物流甲", 700.0, None, 100.0),
+                ("TESTPT4", "TESTPTCODE4", "客户丁", "2026-06-04", "测试物流甲", 200.0, None, None),
+                ("TESTPT5", "TESTPTCODE5", "客户戊", "2026-06-05", "测试物流乙", 900.0, "备注乙", 50.0),
+                ("TESTPT6", "TESTPTCODE6", "客户己", "2026-06-06", "测试物流甲", 400.0, None, 100.0),
+                ("TESTPT7", "TESTPTCODE7", "客户庚", "2026-06-07", "测试物流甲", 600.0, None, 100.0),
             ])
 
         cursor.executemany(
@@ -103,6 +103,15 @@ class TestPortalDeliveries:
         assert data["total"] == 3
         # 运费属内部信息, 不对物流侧暴露
         assert all("freight" not in d for d in data["deliveries"])
+
+    def test_memo_and_price_qty_exposed(self, test_client, setup_portal_data):
+        """发货备注与总计价数量随单据返回, 缺失时为null"""
+        response = test_client.get(f"/api/portal/{TOKEN_A}/deliveries")
+        by_code = {d["delivery_code"]: d for d in response.json()["deliveries"]}
+        assert by_code["TESTPTCODE1"]["shipping_memo"] == "5月平台开票"
+        assert by_code["TESTPTCODE1"]["total_price_qty"] == 1430.0
+        assert by_code["TESTPTCODE4"]["shipping_memo"] is None
+        assert by_code["TESTPTCODE4"]["total_price_qty"] is None
 
     def test_warehouse_upload_does_not_exclude(self, test_client, setup_portal_data):
         """仓库上传(upload_type='仓库')同号记录不代表物流回单已传, 不应排除"""

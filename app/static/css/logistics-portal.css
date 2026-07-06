@@ -165,6 +165,13 @@ body {
     gap: 4px 14px;
 }
 
+.delivery-memo {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-muted);
+    word-break: break-all;
+}
+
 .btn-upload {
     flex-shrink: 0;
     display: inline-flex;

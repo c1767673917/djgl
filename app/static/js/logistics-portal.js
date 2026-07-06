@@ -31,6 +31,14 @@
         return String(value).replace('T', ' ').slice(0, 16);
     }
 
+    function formatQty(value) {
+        if (value == null) return '—';
+        const num = Number(value);
+        if (!isFinite(num)) return '—';
+        // 整数不带小数位, 小数保留原值
+        return String(num);
+    }
+
     function showState(message, extraClass) {
         els.listContainer.innerHTML =
             `<div class="state-tip ${extraClass || ''}">${escapeHtml(message)}</div>`;
@@ -60,7 +68,9 @@
                     <div class="delivery-sub">
                         <span>${escapeHtml(d.customer_name || '—')}</span>
                         <span>发货日期 ${escapeHtml(d.vouchdate || '—')}</span>
+                        <span>总计价数量 ${escapeHtml(formatQty(d.total_price_qty))}</span>
                     </div>
+                    ${d.shipping_memo ? `<div class="delivery-memo">${escapeHtml(d.shipping_memo)}</div>` : ''}
                 </div>
                 <a class="btn-upload" href="${escapeHtml(d.upload_url)}" target="_blank" rel="noopener">上传回单</a>
             </div>`).join('');

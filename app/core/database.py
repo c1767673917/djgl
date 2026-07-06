@@ -216,9 +216,23 @@ def init_database():
                 vouchdate TEXT,
                 logistics_name TEXT NOT NULL,
                 freight REAL,
+                shipping_memo TEXT,
+                total_price_qty REAL,
                 synced_at DATETIME
             )
         """)
+
+        # 检查并新增字段（兼容现有数据库）
+        cursor.execute("PRAGMA table_info(delivery_snapshot)")
+        snapshot_columns = [column[1] for column in cursor.fetchall()]
+
+        # 发货备注 (用友表头 shippingMemo, 物流门户展示)
+        if 'shipping_memo' not in snapshot_columns:
+            cursor.execute("ALTER TABLE delivery_snapshot ADD COLUMN shipping_memo TEXT")
+
+        # 总计价数量 (用友 isSum=true 表头行 totalOutStockPriceQty, 整单汇总值)
+        if 'total_price_qty' not in snapshot_columns:
+            cursor.execute("ALTER TABLE delivery_snapshot ADD COLUMN total_price_qty REAL")
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_ds_logistics

@@ -12,13 +12,16 @@ from app.core.database import get_db_connection, init_database
 # ========== 工具 ==========
 
 def make_record(delivery_id, code=None, logistics="测试物流公司A", freight="500",
-                customer="客户甲", vouchdate="2026-06-01 00:00:00"):
+                customer="客户甲", vouchdate="2026-06-01 00:00:00",
+                shipping_memo="测试发货备注", total_price_qty=100.0):
     """构造发货列表原始记录(表头行)"""
     return {
         "id": delivery_id,
         "code": code or f"TESTCODE-{delivery_id}",
         "agentId_name": customer,
         "vouchdate": vouchdate,
+        "shippingMemo": shipping_memo,
+        "totalOutStockPriceQty": total_price_qty,
         "deliveryVoucherDefineCharacter": {
             "RX003_name": logistics,
             "RX004": freight,
@@ -67,7 +70,8 @@ def preserve_tables(monkeypatch):
         cursor = conn.cursor()
         snapshot_backup = [tuple(row) for row in cursor.execute(
             "SELECT delivery_id, delivery_code, customer_name, vouchdate,"
-            " logistics_name, freight, synced_at FROM delivery_snapshot"
+            " logistics_name, freight, shipping_memo, total_price_qty, synced_at"
+            " FROM delivery_snapshot"
         ).fetchall()]
         meta_backup = [tuple(row) for row in cursor.execute(
             "SELECT key, value FROM app_meta"
@@ -86,7 +90,8 @@ def preserve_tables(monkeypatch):
         cursor.execute("DELETE FROM delivery_snapshot")
         cursor.executemany(
             "INSERT INTO delivery_snapshot (delivery_id, delivery_code, customer_name,"
-            " vouchdate, logistics_name, freight, synced_at) VALUES (?,?,?,?,?,?,?)",
+            " vouchdate, logistics_name, freight, shipping_memo, total_price_qty,"
+            " synced_at) VALUES (?,?,?,?,?,?,?,?,?)",
             snapshot_backup,
         )
         cursor.execute("DELETE FROM app_meta")
@@ -157,7 +162,8 @@ class TestExtractAndFilter:
     def test_field_extraction(self):
         rec = make_record(2574858235647885313, code="RXXOUT202607-0093",
                           customer="京东-营多捞面旗舰店",
-                          vouchdate="2026-06-30 00:00:00", freight="730")
+                          vouchdate="2026-06-30 00:00:00", freight="730",
+                          shipping_memo="22026.5月平台开票", total_price_qty=1430.0)
         kept = dss._extract_and_filter([rec])
         assert kept == [{
             "delivery_id": "2574858235647885313",  # 长整型id转为字符串
@@ -166,7 +172,19 @@ class TestExtractAndFilter:
             "vouchdate": "2026-06-30",
             "logistics_name": "测试物流公司A",
             "freight": 730.0,
+            "shipping_memo": "22026.5月平台开票",
+            "total_price_qty": 1430.0,
         }]
+
+    def test_memo_and_qty_missing_or_blank(self):
+        """shippingMemo缺失/空白置None, totalOutStockPriceQty非法置None"""
+        rec = make_record("1", shipping_memo="  ", total_price_qty=None)
+        rec2 = make_record("2", shipping_memo=None, total_price_qty="abc")
+        kept = {r["delivery_id"]: r for r in dss._extract_and_filter([rec, rec2])}
+        assert kept["1"]["shipping_memo"] is None
+        assert kept["1"]["total_price_qty"] is None
+        assert kept["2"]["shipping_memo"] is None
+        assert kept["2"]["total_price_qty"] is None
 
 
 # ========== 同步主流程 ==========
@@ -189,6 +207,16 @@ class TestSyncDeliverySnapshot:
         assert result["kept_count"] == 3
         assert mock_list.call_count == 3
         assert query_snapshot_ids() == ["TESTDS1", "TESTDS2", "TESTDS3"]
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT shipping_memo, total_price_qty FROM delivery_snapshot"
+                " WHERE delivery_id = 'TESTDS1'"
+            )
+            row = cursor.fetchone()
+        assert row["shipping_memo"] == "测试发货备注"
+        assert row["total_price_qty"] == 100.0
 
         with get_db_connection() as conn:
             cursor = conn.cursor()
